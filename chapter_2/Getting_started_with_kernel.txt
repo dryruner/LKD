@@ -1,0 +1,63 @@
+1. Kernel source tree
+Documentation/	kernel source documentation
+lib/ 			helper routines
+samples/		sample, demonstrative code
+scripts/		scripts used to build the kernel
+tools/			tools helpful for developing Linux
+
+2. Building the kernel
+• Configuring the kernel:
+Configuration options are either boolean or tristate.
+i)   The simplest tool is a text based cmd utility: $ make config
+ii)  ncurses-based graphical utility: $ make menuconfig
+iii) gtk+ based graphical utility: $ make gconfig
+iv)  $ make defconfig; creates a configuration based on the defaults of your architecture
+v)   Configuration options are stored in the root of the kernel source tree in a file named .config. We could directly edit this file. After making changes to this file, or using an existing configuration file on a new kernel tree, by typing: $ make oldconfig; to validate and update the configuration.
+NOTE: The configuration option CONFIG_IKCONFIG_PROC places the complete kernel configuration file at /proc/config.gz; so just:
+$ zcat /proc/config.gz > .config
+$ make oldconfig
+
+• After the kernel configuration is set, just type: $ make;
+• Spawning multiple build jobs: 
+$ make -jn; n is the number of jobs to spawn, usual practice is to spawn 1 or 2 jobs per processor.
+
+3. Installing the new kernel:
+How to install is architecture and boot loader dependent. On x86 system using grub: copy arch/i386/boot/bzImage to /boot, rename it to vmlinuz-version, and edit /boot/grub/grub.conf, adding a new entry for the new kernel
+• Installing modules is automated and architecture-independent: run $ make modules_install
+• System.map in the root of the kernel source tree contains a symbol lookup table, mapping kernel symbols to their start address, useful in debugging.
+
+
+4. A beast of a different nature:
+• No libc or standard headers:
+Because the full C library is too large and too inefficient for the kernel. But many of the useful libc functions are implemented inside the kernel.
+header files like <linux/inotify.h> are in include/linux/inotify.h; <asm/XXX> is in the arch/<architecture>/include/asm/ 
+keenel doesn't have access to printf, but it provides printk, which is very similar to printf. One notable difference is that printk enables a priority flag:  printk(KERN_ERR "this is an error!\n"); note here's no comma!
+
+• Inline functions:
+static inline void wolf(); // inline functions are usually put in header files.
+
+• Inline assembly:
+
+• Branch annotation:
+Kernel wraps the directive in easy-to-use macros likely() and unlikely():
+	if(unlikely(error)){
+		...
+	}
+These directives result in a performance boost when the branch is correctly marked but a performance loss when the branch is mismarked.
+unlikely() is more useful because if statement tends to indicate a special case.
+
+• No memory protection:
+There's no memory protection in kernel memory. And kernel memory is not pageable, therefore every byte of memory you consume is one less byte of available physical memory.
+
+• No (easy) use of floating point:
+When a user-space process uses floating-point instructions, the kernel manages the transition from integer to floating point mode. Unlike user-space, the kernel doesn't have the luxury of seamless support for floating point because it cannot easily trap itself. So using a floating point inside kernel requires manually saving and restoring the floating point registers, among other possible chores. The short answer is: Dont't do it!
+
+• Small, fixed-sized stack:
+User-space has a large stack that can dynamically grow. The kernel stack is neither large nor dynamic, it's small and fixed in size.(For x86, the stack size is configurable at compile-time and can be either 4KB or 8KB.) Historically, the kernel stack is two pages. So do not easily use recursive algorithm in kernel space!!
+
+• Synchronization and Concurrency:
+i)   Linux is a preemptive multitasking OS.
+ii)  Linux supports symmetrical multiprocessing (SMP). Therefore, without proper protection, kernel code executing simultanepusly on 2 or more processors can concurrently access the same resource.
+iii) Interrupts occur asynchronously.
+iv)  Linux kernel is preemptive. So without protection, kernel code can be preempted in favor of different code that then accesses the same resource.
+Typical solution to race conditions include spinlocks and semaphores.
