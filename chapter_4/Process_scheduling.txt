@@ -21,4 +21,67 @@ CFS assigns processes a proportion of the processor. The decision is a function 
 6. The linux scheduling algorithm:
 • Scheduler classes:
 The linux scheduler is a modular enabling different algorithms to schedule different types of processes. This modularity is called scheduler classes. Each scheduler class has a priority. The base scheduler code, exists in kernel/sched.c, iterates over each scheduler class in order of priority. The highest priority scheduler class that has a runnable process wins, selecting who runs next.
-CFS is the registered scheduler class for normal processes, called SCHED_NORMAL in Linux. CFS is defined in kernel/sched_fair.c. 
+CFS is the registered scheduler class for normal processes, called SCHED_NORMAL in Linux. CFS is defined in kernel/sched_fair.c. Instead of using the nice value to calculate a timeslice, CFS uses nice value to weight the proportion of processor a process is to receive. CFS also has a minimum granularity, by default it is 1 millisecond.
+
+7. The linux scheduling implementation:
+Four components of CFS: 1. Time accounting; 2. Process selection; 3. The scheduler entry point; 4. Sleeping and waking up.
+• Time accounting:
+All process schedulers must account for the time that a process runs.
+The scheduler entity structure: defined in <linux/sched.h>, struct sched_entity, this structure is also embedded in process descriptor, named se.
+The virtual runtime: the vruntime variable stores the virtual runtime of a process, which is the actual runtime (the amount of time spent running) normalized by the number of runnable processes. The virtual runtime's units are nanoseconds and therefore vruntime is decoupled from the timer tick. On an ideal processor, the virtual runtime of all processes would be identical, because processors are not capable of perfect multitasking and we must run each process in succession, CFS uses vruntime to account for how long a process has run.
+
+• Process selection:
+CFS attempts to balance a process's virtual runtime with a simple rule: CFS picks the process with the smallest vruntime.(This is the core part of CFS.)
+CFS uses a red-black tree to manage the list of runnable processes, thus finding the task with the smallest vruntime efficiently. (The node contains the smallest vruntime is the leftmost node of the red-black tree, but it's also cached in the rb_leftmost.) If here're no runnable processes, CFS schedules the idle task. rb_leftmost should be updated when a task becomes runnable (wake up) or it's first created by fork. Since the red-black tree is for the runnable processes, so when a process terminates or blocks(becomes unrunnable), it should be removed from the tree.
+
+• The scheduler entry point:
+The main entry point into the process schedule is the function schedule(), defined in kernel/sched.c, it finds the highest priority scheduler class with a runnable process and asks it what to run next.
+
+• Sleeping and waking up:
+The task marks itself as sleeping; put itself on a wait queue; remove itself from the red-black tree representing the runnable processes; calls schedule() to select a new process to execute. Waking up is the inverse: the task is set as runnable, removed from the wait queue, added back to the red-black tree.
+Two states are associated with sleeping: TASK_INTERRUPTIBLE and TASK_UNINTERRUPTIBLE, both are sit in a wait queue.
+
+• Wait queues:
+Wait queues in the kernel are represented in the kernel by wake_queue_head_t. Wait queues are created statically via DECLARE_WAITQUEUE(), or dynamically via init_waitqueue_head(). 
+======================================================================
+/* 'q' is the wait queue we wish to sleep on */
+	DEFINE_WAIT(wait);
+	
+	add_wait_queue(q, &wait);
+	while(!condition)  // condition is the event we're waiting for
+	{
+		prepare_to_wait(&q, &wait, TASK_INTERRUPTIBLE);
+		if(signal_pending(current))
+			/* handle signal */
+		schedule();
+	}
+	finish_wait(&q, &wait);
+======================================================================
+The task performs the following steps to add itself to a wait queue:
+i)   Create a wait queue entry via macro DEFINE_WAIT()
+ii)  Add itself to a wait queue via add_wait_queue(). 
+iii) Calls prepare_to_wait() the change the process's state to either TASK_INTERRUPTIBLE or TASK_UNINTERRUPTIBLE.
+iv)  If the state is set to TASK_INTERRUPTIBLE, and a signal wakes it up (a spurious wake up), needs to check and handle signals.
+v)   When the tasks wakes up, should check again whether the condition is met or not, to avoid TOCTTOU bug. So we should use while() to check conditions.
+vi)  Now that the condition is true, the task set itself to TASK_RUNNING and removes itself from the wait queue via finish_wait().
+
+• Waking up:
+Waking is handled via wait_up(), which wakes up all the tasks waiting on the given wait queue. It calls try_to_wake_up() to set the task's state to TASK_RUNNING; calls enqueue_task() to add the task to the red-black tree; and sets need_resched if the awakened task's priority is higher than the priority of current task.
+
+8. Preemption and context switching:
+context_switch() is in the kernel/sched.c, it is called by schedule() when a new process has been selected to run. It does 2 things:
+• Calls switch_mm() (in <asm/mm_context.h>) to switch the virtual memory mapping from the previous process's to the new process's.
+• Calls switch_to() (in <asm/system.h>) to switch the processor state from the previous process's to the new process's, including saving and restoring the stack information and registers and other architecture-specific state.
+
+The kernel needs to know when to call schedule(), a flag need_resched is used to signify whether a reschedule should be performed. This flag is set by 1. scheduler_tick() when a process should be preempted; 2. by try_to_wake_up() when a process that has a higher priority than the current process is awakened. This flag is a message to the kernel that the scheduler should be invoked as soon as possible.
+Upon returning to user-space or returning from an interrupt, the need_resched flag is checked. If it's set, kernel invokes schedule() before continuting.
+
+• User preemption:
+User preemption occurs when the kernel is about to return to user-space. Because if the kernel is returning to the user-space, then it's safe to continue executing the current task, it's also safe to pick a new task to execute. So whenever kernel is about to return to user-space either on returning from an interrupt handler or after a syscall, need_resched is checked. 
+Both the return paths from interrupt handler or syscall are architecture-dependent and typically implemented in assembly in entry.S.
+In short, user preemption can occur: 
+i)  When returning to user-space from a syscall;
+ii) When returning to user-space from an interrupt handler.
+
+• Kernel preemption:
+Linux kernel is a fully preemptive kernel.
