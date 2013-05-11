@@ -84,4 +84,46 @@ i)  When returning to user-space from a syscall;
 ii) When returning to user-space from an interrupt handler.
 
 • Kernel preemption:
-Linux kernel is a fully preemptive kernel.
+Linux kernel is a fully preemptive kernel. In non-preemptive kernels, kernel code runs until completion. So the scheduler can't rescuedule a task while it's in kernel-space, i.e. kernel code is scheduled cooperatively. But since 2.6, it's now possible to preempt a task at any point, so long as the kernel is in a "safe" state.
+The kernel can preempt a task running in the kernel so long as it doesn't hold a lock. i.e., locks are used as markers of regions of nonpreemptibility.
+Each process has a variable preempt_count in thread_info structure. This variable begins from 0, and increments by 1 each time the process acquires a lock, and decrements by 1 once it releases a lock. When the count is 0, the kernel is preemptible. 
+Upon returning from interrupt, if returning to kernel-space, the kernel checks preempt_count and need_resched:
+i)   If need_resched is set and preempt_count is 0, then it's safe to preempt, schedule() is invoked;
+ii)  If preempt_count is non-zero, the interrupt returns as usual to the currently executing task.
+iii) When all the locks currently running task holds are released, preempt_count -> 0, at this point, the unlock code checks whether need_resched is set, if so, the scheduler is invoked. (Enabling and disabling kernel preemption is sometimes required in kernel code, which is discussed in Chapter 9.)
+
+Kernel preemption can also occur explicitly, when a task in the kernel blocks or explicitly calls schedule(). It is assumed that the code that explicitly calls schedule() knows it is safe to reschedule.
+
+In short, kernel preemption can occur:
+i)   When an interrupt handler exits, before returning to kernel-space;
+ii)  When kernel code becomes preemptible again; (preempt_count -> 0)
+iii) If a task in the kernel explicitly calls schedule();
+iv)  If a task in the kernel blocks ().
+
+9. Real-time scheduling policies:
+Linux provides 2 real-time scheduling policies: SCHED_FIFO, and SCHED_RR. (Normal, not real-time scheduling policy is SCHED_NORMAL.) These 2 real-time scheduling policies are not managed by CFS, but by a special real-time scheduler, defined in kernel/sched_rt.c.
+• SCHED_FIFO:
+Implements a simple first-in-first-out scheduling algorithm without timeslices. A runnable SCHED_FIFO task is always scheduled over any SCHED_NORMAL tasks. When a SCHED_FIFO task becomes runnable, it continues running until it blocks or explicitly yields the processor, it has no timeslice so can run indefinitely. Only a higher priority SCHED_FIFO or SCHED_RR tasks can preempt a SCHED_TASK task. Two or more SCHED_FIFO tasks with the same priority run round-robin, but again only yielding the processor when they explicitly choose to do so. 
+• SCHED_RR:
+SCHED_RR is basically identical to SCHED_FIFO except that each process can run only until it exhausts a predetermined timeslice. i.e., SCHED_RR is SCHED_FIFO with a timeslice. When a SCHED_RR task exhausts its timeslice, any other real-time processes at its priority are scheduled round-robin. As with SCHED_FIFO, a higher-priority process always preempts a lower-priority one, but a lower-priority process can never preempt a SCHED_RR process, even if its timeslice is exhausted.
+
+Both real-time scheduling policies in Linux provide soft real-time behavior. Soft real-time behavior refers to the notion that the kernel tries to schedule applications within timing deadlines, but kernel doesn't promise to always achieve these goals. But the real-time performance of linux is quite good.
+
+10. Scheduler-related system calls:
+i)   Scheduling policy and priority-related system calls:
+nice(): for normal tasks, nice() increments the given process's static priority by a given position amount; only root can provide a negative number.
+sched_setscheduler(): set a process's scheduling policy;
+sched_getscheduler(): get ....;
+sched_setparam(): set a process's real-time priority;
+sched_getparam(): get ....;
+sched_get_priority_max(): get the maximum real-time priority;
+sched_get_priority_min(): get the minimum ....;
+sched_rr_get_interval(): get a process's timeslice value;
+
+ii)  Processor affinity system calls:
+The kernel could enforce hard affinity of a process (the process could only run on a specified processor). This hard affinity is stored as a bitmask in the task's task_struct as cpus_allowed.
+Sched_setaffinity(): set a process's processor affinity;
+sched_getaffinity(): get ....;
+
+iii) Yielding processor time:
+Linux provides sched_yield() syscall for a process to explicitly yield the processor to other waiting processes.
