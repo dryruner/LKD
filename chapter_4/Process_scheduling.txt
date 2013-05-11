@@ -1,0 +1,24 @@
+1. Multitasking:
+Multitasking operating systems come in two flavors: cooperative multitasking and preemptive multitasking.
+• In preemptive multitasking, the scheduler decides when a process is to cease running and a new process is to begin running. The act of involuntarily suspending process is called preemption.
+• In cooperative multitasking, a process doesn't stop running until it voluntary decides to do so. The act of a process voluntarily suspending itself is called yielding.
+
+2. Linux's process scheduler:
+O(1) scheduler, CFS(Complete Fair Scheduler).
+
+3. Policy:
+• I/O-bound v.s. processor-bound processes: Most GUI applications are also I/O bound processes. The scheduler policy for CPU-bound processes are: run such processes less frequently, but with for longer duration. Processes can be both I/O-bound and CPU-bound at the same time, like X window server, and word processer.
+The scheduling policy must attempt to satisfy two conflicting goals: fast process response time (low latency) and maximal system utilization (high throughput).
+• The scheduler policy in Unix systems explicitly favor I/O-bound processes, thus providing good process respond time.
+
+4. Process priority:
+• Nice value: -20 ~ +19, the larger the nice number, the lower the priority. Different unix systems apply nice values in different ways: in Mac OS X, the nice value is a control over the absolute timeslice allotted to a process; in Linux, it is the control over the proportion of timeslice. (ps -el could see nice value information of all processes.)
+• Real-time priority: the higher the real-time priority, the higher the priority. All real-time processes are at a higher priority than normal processes. (i.e. real-time priority and nice value are in disjoint sets.) "ps -eo state,uid,pid,ppid,rtprio,time,comm" could see real-time priority (RTPRIO column, a value of "-" means the process is not real-time.)
+
+5. Timeslice:
+CFS assigns processes a proportion of the processor. The decision is a function of how much of a proportion of the processor the newly runnable process has consumed. If it has consumed a smaller proportion of the processor than the currently executing process, it runs immediately, preempting the current process. If not, it is scheduled to run at a later time.
+
+6. The linux scheduling algorithm:
+• Scheduler classes:
+The linux scheduler is a modular enabling different algorithms to schedule different types of processes. This modularity is called scheduler classes. Each scheduler class has a priority. The base scheduler code, exists in kernel/sched.c, iterates over each scheduler class in order of priority. The highest priority scheduler class that has a runnable process wins, selecting who runs next.
+CFS is the registered scheduler class for normal processes, called SCHED_NORMAL in Linux. CFS is defined in kernel/sched_fair.c. 
