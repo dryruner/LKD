@@ -126,4 +126,6 @@ Sched_setaffinity(): set a process's processor affinity;
 sched_getaffinity(): get ....;
 
 iii) Yielding processor time:
-Linux provides sched_yield() syscall for a process to explicitly yield the processor to other waiting processes.
+Linux provides sched_yield() syscall for a process to explicitly yield the processor to other waiting processes. It works by removing the process from the active array (where it currently is, because it is running) and inserting it into the expired array. This has the effect of not only preempting the process and put it at the end of its priority list, but also putting it on the expired list, thus guaranteeing it won't run for a while. (Because real time tasks never expire, they're a special case, just move them to the end of their priority list. (and not insert them into the expired array.)) 
+
+Kernel code, as a convenience, can call yield(), which ensures the task's state is TASK_RUNNING and then call sched_yield(); user-space applications use sched_yield() syscall.
