@@ -1,0 +1,39 @@
+1. Syscalls:
+For example, the syscall getpid(), the implementation in the kernel is simple:
+SYSCALL_DEFINE0(getpid)
+{
+	return task_tgid_vnr(current); // return current->tgid
+}
+SYSCALL_DEFINE0 is simply a macro that defines a system call with no parameters. The expanded code looks like this:
+asmlinkage long sys_getpid(void);
+i)   asmlinkage is a directive to tell the compiler to look only on the stack for this function's argument. This is a required modifier for all system calls.
+ii)  System calls defined to return an int in user-space return a long in the kernel.
+iii) Naming convention: syscall bar() is implemented in the kernel as function sys_bar().
+
+• System call numbers:
+If a system call is removed, its system call number can't be recycled, Linux provides a "not implemented" system call: sys_ni_syscall(), which does nothing except return -ENOSYS. 
+The kernel keeps a list of all registered system calls in the system call table, stored in system_call_table. This table is explicitly defined for each architecture, on x86-64 it is defined in arch/x86/kernel/syscall_64.c. This table assigns each valid syscall to a unique syscall number.
+
+2. System call handler:
+User-space application must signal the kernel that it wants to execute a syscall and have the system to switch to kernel mode, where the system call can be executed in kernel-space by the kernel on behave of the application. The mechanism to signal kernel is a software interrupt: on x86 is interrupt number 128 (int $0x80). It triggers a switch to kernel mode and the execution of exception vector 128, which is the system call handler, in Linux the system call handler has the name: system_call(). On x86-64 it is implemented in entry_64.S. (Recently, x86 processor adds a feature known as sysenter, it provides a faster, more specialized way of trapping into kernel to execute a syscall than using the int interrupt instruction.)
+
+• Denoting the correct system call:
+system_call() checks the validity of the given system call number by comparing it to NR_syscalls; if it's larger than or equal to NR_syscalls, the function returns -ENOSYS, otherwise, the specified system call is invoked: call *sys_call_table(, %rax, 8).
+
+			Invoking the system call handler and executing a system call
+=========================================================================================
+|                                                                                       |
+|   ------------------    ------------------------    -------------------------         |
+|	↑(1)			 ↓    ↑(2)			         ↓    ↑	(3)		              ↓ (4)     |                     
+|call read()      read() wrapper                 system_call()             sys_read()   |
+|	↑(7)             ↓    ↑(6)                   ↓	  ↑ (5)               	  ↓         |
+|	------------------	  ------------------------ 	  -------------------------         |
+| Application     C library read()               Syscall handler           sys_read()   |
+|					wrapper                                                             |
+|                                                                                       |
+|	    User-space											Kernel-space                |
+|                                                                                       |
+=========================================================================================
+
+• Parameter passing:
+On 
