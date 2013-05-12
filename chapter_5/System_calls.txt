@@ -24,14 +24,14 @@ system_call() checks the validity of the given system call number by comparing i
 =========================================================================================
 |                                                                                       |
 |   ------------------    ------------------------    -------------------------         |
-|	↑(1)			 ↓    ↑(2)			         ↓    ↑	(3)		              ↓ (4)     |                     
+|	↑(1)             ↓    ↑(2)                   ↓    ↑	(3)                   ↓ (4)     |                     
 |call read()      read() wrapper                 system_call()             sys_read()   |
-|	↑(7)             ↓    ↑(6)                   ↓	  ↑ (5)               	  ↓         |
+|	↑(7)             ↓    ↑(6)                   ↓    ↑ (5)               	  ↓         |
 |	------------------	  ------------------------ 	  -------------------------         |
 | Application     C library read()               Syscall handler           sys_read()   |
-|					wrapper                                                             |
+|                   wrapper                                                             |
 |                                                                                       |
-|	    User-space											Kernel-space                |
+|                User-space                                 Kernel-space                |
 |                                                                                       |
 =========================================================================================
 
