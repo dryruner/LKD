@@ -3,4 +3,4 @@
 * Chapter 3: Process Management
 * Chapter 4: Process Scheduling
 * Chapter 5: System Calls
-* Chapter 6: Kernel Data Structures (No work today - 05/15/2013)
+* Chapter 6: Kernel Data Structures

@@ -1,0 +1,98 @@
+1. Linked lists
+• Linux kernel's implementation:
+Linkedlist in kernel is a circular doubly linkedlist. And instead of turning the structure into a linkedlist, the linux approach is to embed a linked list node in the structure, (so given the pointer to the linkedlist node, we could use container_of macro to get the pointer to the outer structure.)
+The linkedlist code is declared in the header file <linux/list.h>:
+struct list_head{
+	struct list_head* next;
+	struct list_head* prev;
+}
+• container_of macro:
+@ptr: 	pointer to the inner structure (member)
+@type: 	type of the outer structure
+@member:field name of the inner structure
+@brief:	Given the pointer(ptr) to the inner structure(member), return the pointer to the outer structure(of type)
+
+#define container_of(ptr, type, member) ({ \
+		const typeof((type*)0->member)* __mptr = (ptr); \
+		(type*)((char*)__mptr - offsetof(type, member)); })
+
+#define offsetof(type, member) ((size_t) &((type*)0)->member)
+
+• Defining a linkedlist:
+INIT_LIST_HEAD(struct list_head*): init the dynamically allocated list node
+LIST_HEAD_INIT(struct list_head): init the statically allocated list node
+LIST_HEAD(name): declare a special node, which is the head of the linkedlist
+
+• Manipulating linkedlists:
+list_add(struct list_head* new, struct list_head* head): add node new after the node head;
+list_add_tail(struct list_head* new, struct list_head* head): add node new before the node head;
+list_del(struct list_head* entry): unlink the node entry, note that entry is not freed;
+list_del_init(struct list_head* entry): also re-init node entry;
+list_move(struct list_head* list, struct list_head* head): unlink the node list and insert it AFTER the node head;
+list_move_tail(struct list_head* list, struct list_head* head): ...
+list_empty(struct list_head* head): test whether a list is empty;
+list_splice(struct list_head* list, struct list_head* head): join 2 linkedlists, by inserting the linkedlist pointed to by list(i.e. list is the head node of that linkedlist) AFTER the node head;
+list_splice_init(struct list_head* list, struct list_head* head): also re-init the node list;
+
+NOTE: sving a couple of dereferences:
+If we already know the next and prev pointers, we could use the internal version directly, like __list_del(prev, next)...
+
+• Traversing linkedlists:
+list_for_each(pos, head): iterate over a full list. pos - the &struct list_head to use as a cursor; head - the head for the linkedlist.
+list_for_each_entry(pos, head, member): iterate over a list of a given type, list_head is just embedded in the type. pos - the type * to use as a loop cursor; head - the head for the list; member - the field name of the list_struct in the struct.
+
+• Iterating while removing:
+list_for_each_entry_safe(pos, n, head, member): Note that the standard iteration version is not appropriate if you're removing entries from the list while traversing. Because if the current entry is removed in the body of the loop, the subsequent iteration cannot advance to the next/previous pointer. So the "safe" version uses n - to store the next/previous pointer prior to a potential removal operation. pos - type * to use as a loop cursor; n - another type * to use as temporary storage.
+
+NOTE: May still need locking!! the "safe" version is only safe for the removal of the current list entry in the while loop, if here's a chance of concurrent removal(i.e. current list manipulation), still need to properly lock access to the list.
+
+2. Queues
+• kfifo:
+In <linux/kfifo.h> and kernel/kfifo.c.
+struct kfifo {
+	unsigned char *buffer;	/* the buffer holding the data */
+	unsigned int size;	/* the size of the allocated buffer */
+	unsigned int in;	/* data is added at offset (in % size) */
+	unsigned int out;	/* data is extracted from off. (out % size) */
+	spinlock_t *lock;	/* protects concurrent modifications */
+};
+
+NOTE: 
+i)   in and out are increasing, even if overflow happens it's OK, because its type is unsigned int. And actually the queue has a fixed size buffer, but it is a circular queue.
+ii)  queue size must be the power of 2!
+iii) Since queue size is a power of 2, so the a % SIZE could be simplified to a & (SIZE - 1), it's more efficient, see source code for more details.
+iv) kfifo is always changing, must check source code before using it, also see LKD and lwn.net for more.
+
+3. Maps
+Maps could be implemented using hashtables or balanced trees. Hashtable may have better average-case asymptotic complexity, balanced trees could have better worst-case complexity.
+Linux kernel doesn't provide a general-purpose map, it just provides a map for one specific use case: mapping a unique identification number(UID) to a pointer. Linux also provides an allocate operation to generate the UID.
+The map is call idr, declared in <linux/idr.h>
+
+• Allocating a new UID:
+Once you have an idr set up (idr_init()), you can allocate a new UID, but it is in two steps:
+i)  Tell the idr that you want to allocate a new UID, allowing it to resize the backing tree as necessary. (int idr_pre_get(struct idr* idp, gfp_t gfp_mask); note idr_pre_get() returns 1 on success and 0 on failure.)
+ii) Then actually request the new UID. (int idr_get_new(struct idr* idp, void* ptr, int* id); it returns -EAGAIN if you need to (again) call idr_pre_get(); returns -ENOSPC if the idr is full. If successful, it obtains a new UID which is stored in the integer id and maps that UID to ptr. idr_get_new_above(struct idr* idp, void* ptr, int starting_id, int* id): specify a minimum UID to return.)
+
+These two separate steps allow us to perform the first resizing (which may require a memory allocation) without a lock!
+
+• Looking up a UID:
+void* idr_find(struct idr* idp, int id): if found, return the bound ptr, else return NULL. (Note that we shouldn't bind UID with NULL pointer, or we couldn't tell whether the find is successful or not.)
+
+• Removing a UID:
+void idr_remove(struct idr* idp, int id): Note that this function couldn't signify error.
+
+• Destroying an idr:
+void idr_destroy(struct idr* idp): Note that this method only deallocate unused memory associated with the idr pointed to by idp. It doesn't free any memory currently in use by allocated UIDs. But generally, kernel code wouldn't destroy its idr facility until it was shutting down or unloading, and it wouldn't unload until it had no more users (and thus no more UIDs).
+
+But to force the removal of all UIDs, you can call void idr_remove_all(struct idr* idp).
+
+4. Red-black trees in kernel
+• Kernel's red-black tree implementation is called rbtrees, it is defined in lib/rbtree.c and declared in <linux/rbtree.h>. 
+The root of rbtree is represented by the rb_root structure: 
+struct rb_root root = RB_ROOT;
+
+• The rbtree implementation doesn't provide search and insert routines. Users of rbtrees should define their own, see the lib/rbtree.c for more details. Note that the user-provide search version should call rb_link_node() and rb_insert_color(), check the comments in the source code.
+
+5. What data structure to use and when:
+Besides the 4 types of data structures mentioned above, kernel also provides radix tree and bitmaps. But kernel doesn't provide hash table implementation, because hash function is specific to each use case. 
+Always use kernel's implementation of data structures first, unless you have a good reason to reinvent the wheel (not recommended).
