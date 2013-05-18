@@ -4,3 +4,4 @@
 * Chapter 4: Process Scheduling
 * Chapter 5: System Calls
 * Chapter 6: Kernel Data Structures
+* Chapter 7: Interrupts and Interrupt Handlers
