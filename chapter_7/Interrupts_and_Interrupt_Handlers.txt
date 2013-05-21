@@ -58,3 +58,49 @@ Interrupt context is time-critical because interrupt handler interrupts other co
 i)  Historically, interrupt handlers didn't have their own stacks; instead, they share the (kernel) stack of the interrupted process. (Kernel stack is 2 pages in size. And at least one process is running at any given time, when nothing else is schedulable, the idle task runs.)
 ii) From 2.6 kernel process, an option was added to reduce the stack size from 2 pages to 1 page. This reduced memory usage/pressure because every process previously needed 2 pages of contiguous, nonswappable kernel memory. To cope with this recuded stack size, interrupt handlers were given their own stack, one stack per processor, one page in size. This stack is referred to as "interrupt stack".
 The interrupt handler should not care what stack setuo is in use or what the size of the kernel stack is. Always use an absolute minimum amount of stack space.
+
+4. Implementing interrupt handlers:
+The path of an interrupt goes from hardware to the kernel:
+A device issues an interrupt by sending electric signal over its bus to the interrupt controller --> If the interrupt line is enabled (they can be masked out), the interrupt controller sends the interrupt to the processor --> Unless the interrupt is disabled in the processor, the processor immediately stops what it is doing, disables the interrupt system, and jumps to a predefined location in memory and executes the code located there. 
+This predefined point is set up by the kernel and is the entry point for interrupt handlers.
+
+The entry point simply saves the IRQ number and stores current register values on the stack (of the interrupted process's kernel stack), then the kernel calls do_IRQ(). After the interrupted line is calculated, do_IRQ() acknowledges the receipt of the interrupt and disables interrupt delivery on the line. Next, do_IRQ() ensures a valid handler is registered on the line and it's enabled and not currently executing. If so, it calls handle_IRQ_event(), defined in kernel/irq/handler.c, to run the installed interrupt handlers for the line.
+
+5. /proc/interrupts:
+This file contains statistics related to interrupts on the system.
+i)   The first column is the interrupt line. Handlers not installed on lines are not displayed.
+ii)  The second column is a counter of the number of interrupts received. 
+iii) The third column is the interrupt controller handling this interrupt. XT-PIC corresponds to the standard PC programmable interrupt controller. On systems with an I/O APIC, most interrupts would list IO-APIC-level or IO-APIC-edge as their interrupt controller.
+iv)  The last column is the deviced associated with this interrupt, this name is supplied by the devname parameter to request_irq(). If the interrupt line is shared, all the devices registered on the line are listed.
+
+6. Interrupt control:
+• Linux kernel implements a family of interfaces for manipulating the state of interrupts: like i) enable/disable the interrupt system for the current processor; or ii) mask out an interrupt line for the entire machine. These routines are all architecture-dependent and can be found in <asm/system.h> and <asm/irq.h>
+• The lock provides protection against concurrent access from another processor; whereas disabling interrupts provides protection against concurrent access from a possible interrupt handler.
+
+• Disabling/Enabling interrupts for a local processor:
+local_irq_disable()/local_irq_enable() disables/enables all interrupts locally for the current processor (and only for the current processor (no global cli and sti)).
+i)  The local_irq_disable() routine is dangerous if interrupts were already disabled prior to its invocation. The corresponding call to local_irq_enable() unconditionally enables interrupts, despite the fact that they were off to begin with. 
+ii) Since it becomes harder as the kernel grows in size and complexity to know all the code path leading to a function, it's much safer to save the state of the interrupt system before disabling it. Then when it is ready to reenable interrupts, simply restore to the original state. Kernel provides this mechanism:
+unsigned long flags;
+local_irq_save(flags); // save the current state of local interrupt delivery and then disables it.
+/* ... */
+local_irq_restore(flags); // restore the local interrupt delivery to the given state.
+Note that the call to save and the call to restore interrupts must occur in the same function! Because at least one architecture incorporates stack information into the value (ahem, SPARC), so flags cannot be passed to another function (Specifically, it must remain on the same stack!). (So this mechanism also has its drawpoint.)
+
+All the previous 4 functions can be called from both interrupt and process context.
+
+• Disabling/Enabling a specific interrupt line:
+In some cases it is useful to disable only a specific interrupt line for the entire system. (Masking out an interrupt line, like you might want to disable delivery of a device's interrupts before manipulating its state.)
+i)   void disable_irq(unsigned int irq); disables a given interrupt line in the interrupt controller, this disables delivery of the given interrupt to all processors in the system. This function doesn't return until any currently executing handler completes, thus callers are assured not only that new interrupts will not be delivered on the given line, but also any already executing handlers have exited.
+ii)  void disable_irq_nosync(unsigned int irq); does not wait for current handlers to complete.
+iii) void enable_irq(unsigned int irq); enables the given interrupt line.
+iv)  void synchronize_irq(unsigned int irq); waits for a specific interrupt handler to exit, if it is executing, before returning.
+
+Note that calls to these function nest. For each call to disable_irq() or disable_irq_nosync() on a given interrupt line, only on the last call to enable_irq() is the interrupt line actually enabled. All three of these can be called from both interrupt and process context and do not sleep.
+Since PCI devices have to support interrupt line sharing by specification, they should not use these interfaces (diasbling/enabling a specific interrupt line).
+
+• Status of the interrupt system:
+i)  Macro irqs_disabled(): defined in <asm/system.h> returns nonzero if the interrupt system on the local processor is disabled, otherwise it returns 0.
+ii) Two macros, defined in <linux/hardirq.h>, provide an interface to check the kernel current context, they're:
+	in_interrupt(): returns nonzero if the kernel is in interrupt context (including top half and bottom half.)
+	in_irq(): returns nonzero only if the kernel is executing an interrupt handler.
