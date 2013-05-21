@@ -27,4 +27,34 @@ On success request_irq() returns 0.
 Note that request_irq() can sleep, therefore cannot be called from interrupt context or other situation where code cannot block. The reason that it can sleep is that: On registration, an entry corresponding is created in /proc/irq, calls proc_mkdir() -> calls proc_create() -> calls kmalloc(), kmalloc() can sleep.
 
 • Freeing an interrupt handler:
+When the driver unloads, need to unregister the interrupt handler and potentially disable the interrupt line. Call:
+void free_irq(unsigned int irq, void* dev);
+Note that the invocation of free_irq() must be made from process context.
 
+2. Writing an interrupt handler:
+• The following is a declaration of an interrupt handler:
+static irqreturn_t intr_handler(int irq, void* dev);
+This declaration matches the prototype of the handler argument given to request_irq(). 
+i)   1st argu: irq - the numeric value of the interrupt line the handler is servicing; 
+ii)  2nd argu: dev - pointer to the same dev that was given to request_irq() when the interrupt handler is registered.
+iii) return value of an interrupt handler is the special type irqreturn_t. An interrupt handler can return two special values, IRQ_NONE and IRQ_HANDLED. The former is returned when the interrupt handler detects an interrupt for which its device was not the originator. The latter is returned if the interrupt handler was correctly invoked, and its device did indeed cause the interrupt. A macro IRQ_RETVAL(val) could be used: if val is nonzero, this macor returns IRQ_HANDLED; otherwise this macro returns IRQ_NONE.
+The interrupt is normally marked static because it is never called directly from another file.
+
+• Reentrancy and interrupt handlers:
+Interrupt handler in Linux need not be reentrant. When a given interrupt handler is executing, the corresponding interrupt line is masked out on all processors, preventing another interrupt on the same line from being received. Normally all other interrupts are enabled, so other interrupts are serviced, but the current line is always disabled. So the same interrupt handler is never invoked concurrently to be a nested interrupt. (But if ISR handles global resource, it still needs to be careful of deadlock!)
+
+• Shared handlers:
+i)   The IRQF_SHARED flag must be set in the flags argument to request_irq(). (All drivers sharing the interrupt line must all specify IRQF_SHARED in request_irq().)
+ii)  The dev argument must be unique to each registered handler. A pointer to any per-device structure is sufficient; and you cannot pass NULL for a shared handler!
+iii) The interrupt handler must be capable of distinguishing whether its device actually generated an interrupt. This requires both hardware support and associated logic in the interrupt handler. If the hardware did not offer this capability, there would be no way for the interrupt handler to know whether its associated device or some other device sharing the line caused the interrupt. 
+
+Note that shared handlers can mix usage of IRQ_DISABLED. When the kernel kernel receives an interrupt, it invokes sequentially each registered handler on the line.
+
+3. Interrupt context:
+In interrupt context, the current macro is not relevant (although it points to the interrupted process). Without a backing process, interrupt context cannot sleep - how could it reschedule? Therefore, if a function sleeps, you cannot use this function from an interrupt handler.
+Interrupt context is time-critical because interrupt handler interrupts other code - even another interrupt handler on a different line! (Busy looping possible, but discouraged.)
+
+• The setup of an interrupt handler's stack
+i)  Historically, interrupt handlers didn't have their own stacks; instead, they share the (kernel) stack of the interrupted process. (Kernel stack is 2 pages in size. And at least one process is running at any given time, when nothing else is schedulable, the idle task runs.)
+ii) From 2.6 kernel process, an option was added to reduce the stack size from 2 pages to 1 page. This reduced memory usage/pressure because every process previously needed 2 pages of contiguous, nonswappable kernel memory. To cope with this recuded stack size, interrupt handlers were given their own stack, one stack per processor, one page in size. This stack is referred to as "interrupt stack".
+The interrupt handler should not care what stack setuo is in use or what the size of the kernel stack is. Always use an absolute minimum amount of stack space.
