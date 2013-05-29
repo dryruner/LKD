@@ -42,7 +42,7 @@ and vfork() is implemented as: clone(CLONE_VFORK | CLONE_VM | SIGCHLD, 0);
 see more about clone()'s flags.
 
 • Kernel threads:
-Kernel threads are the processes that exist only in kernel space. The significant difference between kernel threads and normal processes is that kernel threads do not have an address space. (kernel threads' mm pointer is NULL (which points to their address space.)). Kernel threads operate only in kernel space and do not context to user-space. But kernel threads are scheduable and preemptable, the same as normal processes. Kernel threads are created on system boot by other kernel threads. in header file <linux/kthread.h>, kthread_create() spawns a new kernel thread from an existing one.
+Kernel threads are the processes that exist only in kernel space. The significant difference between kernel threads and normal processes is that kernel threads do not have an address space. (kernel threads' mm pointer is NULL (which points to their address space.)). Kernel threads operate only in kernel space and do not context to user-space. But kernel threads are scheduable and preemptable, the same as normal processes (process context). Kernel threads are created on system boot by other kernel threads. in header file <linux/kthread.h>, kthread_create() spawns a new kernel thread from an existing one.
 
 9. Process termination:
 After do_exit() is called, the only memory it occupies is its kernel stack, the thread_info struct, and the task_struct structure. The task exists solely to provide information to its parent.
