@@ -5,3 +5,4 @@
 * Chapter 5: System Calls
 * Chapter 6: Kernel Data Structures
 * Chapter 7: Interrupts and Interrupt Handlers
+* Chapter 8: Bottom Halves and Deferring Work

@@ -1,0 +1,35 @@
+1. Bottom halves:
+• Managing interrupts is divided into two parts; i) The first part, interrupt handlers are executed by the kernel asynchronously in immediate response to a hardware interrupt; ii) The second part, bottom halves is to perform any interrupt-related work not performed by the ISR.
+
+• A couple of useful tips in deciding how to divide the work between the two parts:
+i)   If the work is time sensitive, perform it in the interrupt handler;
+ii)  If the work is related to the hardware, perform it in the interrupt handler;
+iii) If the work needs to ensure that another interrupt (particularly the same interrupt) does not interrupt it, perform it in the interrupt handler;
+iv)  For everything else, consider performing the work in the bottom half.
+
+• Why bottom halves?
+Because interrupt handlers run with the current interrupt line disabled on all processors, and even worse if IRQF_DISABLED is set, all interrupt lines on the current processor are disabled + current interrupt line disabled on all processors. 
+The point of a bottom half is not to do work at some specific point in the future, but simply to defer work until any point in the future when the system is less busy and interrupts again enabled. Often the bottom halves run immediately after the interrupt returns. The key is that they run with all interrupts enabled.
+
+• The history of bottom halves:
+i)   The original "Bottom Half" (BH):
+No two BHs could run at the same time, even on different processors.
+ii)  Task Queues:
+The kernel defines a family of queues, each queue contained a linked list of functions to call. The queued functions were run at certain times, depending on which queue they were in. Drivers could register their bottom halves in the appropriate queue. 
+iii) Softirqs and Tasklets:
+Softirqs are a set of statically defined bottom halves that can run simultaneously on any processor, even two of the same types can run concurrently. Tasklets, which has nothing to do with tasks, are flexible and dynamically created bottom halves built on softirqs. Two different tasklets can run concurrently on different processors, but tasklets of the same type couldn't cannot run simultaneously. So tasklet is a good tradeoff between performance and ease of use.
+Softirqs are useful when performance is critical, such as networking. Softirqs must be registered statically at compile time, but tasklets are dynamically registered.
+iv)  Work Queues:
+Work queues are a simple but useful method of queueing work to be later performed in process context.
+v)   Kernel timers:
+Another mechanism for deferring work is kernel timers. But unlike the previous methods, timers defer work for a specified amount of time. Thus timers defer work until at least a specific time has elapsed, the above methods defer work to any time but now.
+
+• Bottom halves:
+BH   			removed in 2.5
+Task Queues 	removed in 2.5
+Softirq			available since 2.3
+Tasklet			available since 2.3
+Work queues		available since 2.5
+
+2. Softirqs:
+
