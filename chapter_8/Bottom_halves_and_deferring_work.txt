@@ -32,4 +32,120 @@ Tasklet			available since 2.3
 Work queues		available since 2.5
 
 2. Softirqs:
+Softirqs are rarely used directly, tasklets are a much more common form of bottom half, the softirq source code lives in kernel/softirq.c.
+• implementing softirqs:
+softirqs are represented by the softirq_action structure, which is defined in <linux/interrupt.h>:
+struct softirq_action
+{
+	void (*action)(struct softirq_action*);
+};
+A 32-entry array of this structure is declared in kernel/softirq.c:
+static struct softirq_action softirq_vec[NR_SOFTIRQS];
+The kernel enforces a limit of 32 registered softirqs, however in the current kernel, only 9 exists.
+• The softirq handler:
+The prototype of a softirq handler:
+void softirq_handler(struct softirq_action*);
+A softirq never preempts another softirq, the only event that can preempt a softirq is an interrupt handler. Another softirq, even the same one, can run on another processor.
+• Executing softirqs:
+A registered softirq must be marked before it will execute, this is called raising the softirq. Usually, the ISR marks its softirq for execution before returning, then at a suitable time, the softirq runs. Pending softirqs are checked for and executed in the following places:
+i)   In the return from hardware interrupt code path;
+ii)  In the ksoftirqd kernel thread;
+iii) In any code that explicitly checks for and executes pending softirqs, such as the network subsystem.
+==========================================
+u32 pending;
+
+pending = local_softirq_pending();
+if(pending)
+{
+	struct softirq_action* h;
+	/* reset the pending bitmask */
+	set_softirq_pending(0);
+
+	h = softirq_vec;
+	do{
+		if(pending & 1)
+			h->action(h);
+		h++;
+		pending >>= 1;
+	while(pending);
+}
+==========================================
+This snippet is the heart of softirq processing:
+pending is a 32-bit mask of pending softirqs, after it is got from local_softirq_pending(), it could be cleared. (This actually should be done with local interrupts disabled, because if interrupts were not disabled, a softirq could have been raised(and thus be pending) in the intervening time between saving the mask and cleaning it.) while here's a pending softirq, loop over pending bit mask, and execute its handler. (at most loops 32 times.)
+
+• Using softirqs:
+Softirqs are reserved for the most timing-critical and important bottom half processing. Currently only two subsystems - network and block devices directly use softirqs. Additionally, kernel timers and tasklets are built on top of softirqs.
+i)   Assigning an index:
+Softirq is declared statically at compile time via an enum in <linux/interrupt.h>. The kernel uses this index which starts from 0, as relative priority. Softirqs with lower index execute before those with higher priorities.
+Creating a softirq includes adding an entry in the enum, but not simply adding at the end of the enum, because here's a relative priority. But by convention, HI_SOFTTRQ is always the first entry and RCU_SOFTIRQ is always the last entry. A new entry likely belongs in between BLOCK_SOFTIRQ and TASKLET_SOFTIRQ.
+ii)  Registering the handler:
+Softirq handler is registered at run-time via open_softirq(), which takes 2 parameters: the softirq's index and its handler function. For example:
+open_softirq(NET_TX_SOFTIRQ, net_tx_action);
+The softirq handlers run with interrupts enabled and cannot sleep. While a softirq handler runs, softirqs on the current processor are disabled, another processor, however, can execute other softirqs. Because two softirq handlers of the same type could be executed at the same time, so proper locking is required for global data used in softirq handler. If softirq uses a lock to prevent another instance of itself from running simultaneously, there would be no reason to use softirq. Consequently, softirqs handlers resort to per-processor data and other tricks to avoid explicit locking.
+iii) Raising the softirqs:
+Calling raise_softirq_irq(softirq_index) to mark it pending, so it could run at the next invocation of do_softirq(). This function disables interrupts prior to actually raising the softirq and then restores them to their previous state. If the interrupts are already off, the function raise_softirq_irqoff(softirq_index) could be used as a small optimization.
+Softirqs are most often raised from within interrupt handlers. So ISR performs the basic hardware-related work; raises the softirq; and then exits.
+
+3. Tasklets:
+Tasklets are similar in nature and behavior to softirqs, but they have a simpler interface and relaxed locking rules. Softirqs are required only for high frequency and highly threaded uses. Tasklets are used most widely.
+
+• Implementing tasklets:
+Tasklets are implemented by two softirqs: HI_SOFTIRQ and TASKLET_SOFTIRQ. Tasklets are represented by the tasklet_struct structure, it is declared in <linux/interrupt.h>:
+struct tasklet_struct{
+	struct tasklet_struct* next;  	/* next tasklet in list */
+	unsigned long state;			/* state of the tasklet */
+	atomic_t count;					/* reference counter */
+	void (*func)(unsigned long);	/* tasklet handler function */
+	unsigned long data;				/* argument to the tasklet function */
+};
+The state member is exactly 0, TASKLET_STATE_SCHED (denotes a tasklet that is scheduled to run), TASKLET_STATE_RUN (denotes a tasklet that is running). And TASKLET_STATE_RUN is used only on multiprocessor machines.
+The count member is used as a reference count for the tasklet. If it is nonzero, the tasklet is disabled and cannot run; if it is zero, the tasklet is enabled and can run if marked pending.
+
+• Scheduling tasklets:
+Scheduled tasklets (the equivalent of raised softirqs) are stored in two per-processor structures: tasklet_vec(for regular tasklets) and tasklet_hi_vec(for high-priority tasklets). Both of these structures are linked-list of tasklet_struct structures. 
+Tasklets are scheduled by tasklet_schedule() and tasklet_hi_schedule(), which receive a pointer to the tasklet's tasklet_struct as their sole argument. How tasklet_schedule() works:
+i)   Check whether the tasklet's state is TASKLET_STATE_SCHED, if it is, then the tasklet is already scheduled to run and the function immediately returns.
+ii)  Call __tasklet_schedule().
+iii) Save the state of the interrupt system and then disable local interrupts. This ensures that nothing on this processor will mess with the tasklet code while tasklet_schedule() is manipulating the tasklets.
+iv)  Add the tasklet to be scheduled to the head of the tasklet_vec (tasklet_hi_vec) linked list, which is unique to each processor.
+v)   Raise the TASKLET_SOFTIRQ or HI_SORTIRQ so do_softirq() executes this tasklet in the near future.
+vi)  Restore interrupts to their previous state and return.
+
+do_softirq() executes the associated handlers: tasklet_action() and tasklet_hi_action(), these handlers are the heart of tasklet processing. What these handlers do:
+i)    Disable local interrupt delivery (there's no need to save the state because the code here is always called as a softirq handler, so interrupts are always enabled.) and receive the tasklet_vec or tasklet_hi_vec list for this processor.
+ii)   Clear this list by setting it to NULL.
+iii)  Enable local interrupt delivery.
+iv)   Loop over each pending tasklet in the retrieved list.
+v)    If this is a multi-processor machine, check whether the tasklet is running on another processor by checking TASKLET_STATE_RUN flag. If it is currently running, do not execute it now and skip to the next pending tasklet. (Only one tasklet of the same type could run at a time.)
+vi)   If the current tasklet is not running, set TASKLET_STATE_RUN flag so another processor would not run it.
+vii)  Check the count, if it is nonzero then the tasklet is disabled and skip it, go to the next pending tasklet.
+viii) Run the tasklet handler.(Since we now know that the tasklet is not running elsewhere, and is marked as running, and has a zero count(enabled), so we could execute its handler)
+ix)   After the tasklet runs, clear the TASKLET_STATE_RUN flag.
+x)    Repeat for the next pending tasklet, until there're no more scheduled tasklets waiting to run.
+
+• Using tasklets:
+i)   Declaring the tasklet:
+TAsklets could be created statically or dynamically:
+DECLARE_TASKLET(name, func, data) macro (sets count to 0) and DECLARE_TASKLET_DISABLED(name, func, data) macro (sets count to 1):
+DECLARE_TASKLET(my_tasklet, my_tasklet_handler, dev) is equivalent to:
+struct tasklet_struct my_tasklet = {NULL, 0, ATOMIC_INIT(0), my_tasklet_handler, dev};
+
+If already have a tasklet_struct, could initialize it using:
+tasklet_init(p_tasklet_struct, tasklet_handler, dev);
+
+ii)  Writing the tasklet handler:
+The tasklet handler must match the following prototyte:
+void tasklet_handler(unsigned long data);
+As with softirqs, tasklets cannot sleep, so you cannot use semaphores or other blocking functions in a tasklet. Tasklets also run with all interrupts enabled. If your tasklet shares data with other tasklet or softirq, you need to use proper locking.
+ 
+iii) Scheduling the tasklet:
+tasklet_schedule(&my_tasklet);  /* mark my_tasklet pending */
+As an optimization, a tasklet always runs on the processor that scheduled it - making better use of the processor cache.
+
+iv) Disabling/Enabling tasklets:
+A tasklet could be disabled by calling tasklet_disable(&my_tasklet). If the tasklet is currently running, this function would not return until the tasklet finishes the execution. Alternatively, tasklet_disable_nosync(&my_tasklet) disables the tasklet but doesn't block.
+tasklet_enable(&my_tasklet); enables the tasklet.
+tasklet_kill(&my_tasklet) removes the tasklet from the pending queue. It first waits for the tasklet to finish the execution and then removes it from the pending queue. This function must not be used in interrupt context because it sleeps. Removing a scheduled tasklet from the queue is useful when dealing with a tasklet that often reschedules itself. And nothing stops some other code from rescheduling the tasklet again, of course.
+
+• ksoftirqd:
 
