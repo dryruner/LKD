@@ -25,11 +25,11 @@ v)   Kernel timers:
 Another mechanism for deferring work is kernel timers. But unlike the previous methods, timers defer work for a specified amount of time. Thus timers defer work until at least a specific time has elapsed, the above methods defer work to any time but now.
 
 • Bottom halves:
-BH   			removed in 2.5
-Task Queues 	removed in 2.5
-Softirq			available since 2.3
-Tasklet			available since 2.3
-Work queues		available since 2.5
+BH              removed in 2.5
+Task Queues     removed in 2.5
+Softirq         available since 2.3
+Tasklet         available since 2.3
+Work queues     available since 2.5
 
 2. Softirqs:
 Softirqs are rarely used directly, tasklets are a much more common form of bottom half, the softirq source code lives in kernel/softirq.c.
@@ -148,4 +148,36 @@ tasklet_enable(&my_tasklet); enables the tasklet.
 tasklet_kill(&my_tasklet) removes the tasklet from the pending queue. It first waits for the tasklet to finish the execution and then removes it from the pending queue. This function must not be used in interrupt context because it sleeps. Removing a scheduled tasklet from the queue is useful when dealing with a tasklet that often reschedules itself. And nothing stops some other code from rescheduling the tasklet again, of course.
 
 • ksoftirqd:
+Softirq and tasklet processing is aided by a set of per-processor kernel threads, these kernel threads help in the processing of softirqs when the system is overwhelmed with softirqs. 
+Softirqs might be raised at high rates, and further, softirqs can reactivate themselves. So the possibility of a high frequency of softirqs in conjunction with their capability to remark themselves active can result in user-space programs being starved.
+The 1st solutiuon is simply to keep processing softirqs as they come in and to recheck and reprocess any pending softirqs before returning. This ensures that the kernel processes softirqs in a timely manner. But the user-space is neglected.
+The 2nd solution is not to handle reactivated softirqs. On return from interrupt, the kernel merely looks at all pending softirqs and executes them as normal. If any softirq reactivates itself, they will not run until the next time the kernel handles pending softirqs. But although this method prevents starving user-space, it does starve the softirqs and does not take good advantage of an idle system.
+The 3rd solution, not immediately process reactivated softirqs, but if the number of softirqs grows excessive, the kernel wakes up a family of kernel threads to handle the load. The kernel thread runs with the lowest priority (nice 19), which ensures that they do not run in lieu of something important. This method prevents heavy softirqs from starving user-space, and it also ensures the "excess" softirqs do run eventually. And this solution has the added property that on an idle system the softirqs are handled rather quickly because the kernel threads will schedule immediately.
+
+There is one thread per processor, with the name of ksoftirqd/n where n is the processor number. These kernel threads run a tight loop similar to this:
+=============================================
+for(;;)
+{
+	if(!softirq_pending(cpu))
+		schedule();
+	set_current)_state(TASK_RUNNING);
+	while(softirq_pending(cpu))
+	{
+		do_softirq();
+		if(need_reschedule())
+			schedule();
+	}
+	set_current_state(TASK_INTERRUPTIBLE);
+}
+=============================================
+If any softirqs are pending, ksoftirqd calls do_softirq() to handle them. Notice that it does this repeatedly to handle any reactivated softirqs, too. After each iteration, schedule() is called if needed, to enable more important processes to run. After all processing is complete, the kernel thread sets itself TASK_INTERRUPTIBLE and invokes the scheduler to select a new runnable process.
+
+The softirq kernel threads are awakened whenever do_softirq() detects an executed kernel thread reactivating itself.
+
+• The old BH mechanism:
+Each BH must be statically defined and there are a maximum of 32. Because the handlers must be defined in compile time, modules could not directly use the BH interface.
+All BH handlers are strictly serialized, no two BH handlers, even of different types, can run concurrently.
+make_bh() passes in the BH number and makes it pending, and this in turn scheduled the BH handlers bh_action() to run.
+
+4. Work Queues:
 
