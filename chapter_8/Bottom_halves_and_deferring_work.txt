@@ -67,7 +67,7 @@ if(pending)
 			h->action(h);
 		h++;
 		pending >>= 1;
-	while(pending);
+	}while(pending);
 }
 ==========================================
 This snippet is the heart of softirq processing:
@@ -180,4 +180,101 @@ All BH handlers are strictly serialized, no two BH handlers, even of different t
 make_bh() passes in the BH number and makes it pending, and this in turn scheduled the BH handlers bh_action() to run.
 
 4. Work Queues:
+Work queues defer work into a kernel thread, this bottom half always runs in process context; so work queues are schedulable and can therefore sleep. It's easy to decide between using work queues and softirq/tasklet: If deferred work needs to sleep, work queues are used; otherwise, softirqs/tasklets are used.
+If you need a scheduable entity to perform your bottom-half processing, you need work queues. They're the only bottom-half mechanisms that run in process context, and thus the only ones that can sleep. This means that they're useful for situations in which you need to i) allocate a lot of memory; ii) obtain a semaphore; iii) perform block I/O.
 
+• Implementing work queues:
+In its most basic form, the work queue subsystem is an interface for creating kernel threads to handle work queued from elsewhere. These kernel threads are called worker threads. The default worker threads are called "events/n" where n is the processor number, there's one events kernel thread per processor. Unless a driver or subsystem has a strong requirement for creating its own thread, the default thread is preferred. 
+But nothing stops code from creating its own worker thread. Processor-intense and performance-critical work might benefit from its own thread. This also lightens the load on the default threads, which prevents starving the rest of the queued work.
+
+• Data structures representing the type of (multiple) kernel threads: (defined in kernel/workqueue.c)
+=================================================
+struct workqueue_struct
+{
+	struct cpu_workqueue_struct cpu_wq[NR_CPUS];  /* one per processor in the system */
+	struct list_head list;
+	const char* name;
+	int singlethread;
+	int freezeable;
+	int rt;
+};
+
+struct cpu_workqueue_struct
+{
+	spinlock_t lock;                        /* lock protecting this structure */
+	struct list_head worklist;              /* list of work */
+	wait_queue_head_t more_work;
+	struct work_queue* current_struct;
+	struct workqueue_struct* wq;            /* associated workqueue struct */
+	task_t* thread;                         /* associated thread */
+};
+==================================================
+Note that each type of worker thread has one workqueue_struct associated to it. Inside, there's one cpu_workqueue_struct for each processor. There is one worker thread of that type on each processor.
+
+• Data structures representing one specific work: (defined in <linux/workqueue.h>)
+All worker threads are implemented as normal kernel threads running the worker_thread() function. Each work is represented by the following structure:
+=============================
+struct work_struct
+{
+	atomic_long_t data;
+	struct list_head entry;
+	work_func_t func;
+};
+=============================
+These structures are strung into a linked list, one for each type of queue on each processor.
+
+The heart of worker_thread():
+=================================================================
+for(;;)
+{
+	prepare_to_wait(&cwq->more_work, &wait, TASK_INTERRUPTIBLE);
+	if(list_empty(&cwq->worklist))
+		schedule();
+	finish_wait(&cwq->more_work, &wait);
+	run_workqueue(cwq);
+}
+=================================================================
+i)   The thread marks itself sleeping (its state is set to TASK_INTERRUPTIBLE and adds itself to a wait queue);
+ii)  If the linked list is empty, the thread calls schedule() and goes to sleep;
+iii) If the list is non-empty, the thread doesn't go to sleep; instead it marks itself as TASK_RUNNING and removes itself from the wait queue.
+iv)  If the list is non-empty, the thread calls run_workqueue() to perform the deferred work. run_workqueue() performs the following work:
+=======================================================================
+while(!list_empty(&cwq->worklist))
+{
+	struct work_struct* work;
+	work_func_t f;
+	void* data;
+
+	work = list_entry(cwq->worklist.next, struct work_struct, entry);
+	f = work->func;
+	list_del_init(cwq->worklist.next);
+	work_clear_pending(work);
+	f(work);
+}
+=======================================================================
+i)   While the list is not empty, it grabs the next entry in the list;
+ii)  It retrieves the function that should be called and its data;
+iii) It removes the entry from the list and clears the pending bit in the structure itself;
+iv)  It invokes the function; and then repeat.
+
+• Work queue implementation summary:
+At the highest level, there're worker threads. There can be multiple types of worker threads, and there's one worker thread per processor of a given type. Kernel can create worker threads as needed, and by default there's the events/n worker thread. Each worker thread is represented by the cpu_workqueue_struct structure. The workqueue_struct structure represents all the worker threads of a given type. The work_struct structure represents a work, this structure contains a pointer to the function that handles the deferred work. The work is submitted to a specific worker thread.
+
+• Using work queues:
+i)   Creating work:
+The 1st step is to create some work to defer. To create the structure statically at runtime: DECLARE_WORK(name, void (*func)(void*), void* data); this statically creates a work_struct structure named name with handler function func and argument data. If already have the work_struct structure, using: INIT_WORK(struct work_struct* work, void (*func)(void*), void* data);
+
+ii)  The work queue handler:
+The prototype for the work queue handler is:
+void work_handler(void* data);
+The handler runs in process context and could sleep. By default, interrupts are enabled and no locks are held. Note that despite running in process context, the work handlers cannot access user-space memory because there's no associated user-space user-space memory map for kernel threads. (The kernel can access user-space memory only when running on behalf of a user-space process, such as executing a syscall. Only then is user-space memory mapped in.)
+Locking between work queues and other parts of kernel is handled just as with any other process context code.
+
+iii) Scheduling the work:
+To queue a given work's handler function with the default events worker thread, simply call:
+schedule_work(&work); The work is scheduled immediately and is run as soon as the events worker thread on the current processor wakes up.
+Sometimes you do not want the work to execute immediately, but instead after some delay:
+schedule_delayed_work(&work, delay); In this case, the work will not execute for at least delay timer ticks into the future.
+
+iv)  Flushing work:
+Sometimes you need to ensure that a given batch of work has completed before continuing. This is especially important for modules, which almost certainly want to call this function before unloading. Other places in the kernel want to make sure that no work is pending to prevent race conditions.
