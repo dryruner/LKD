@@ -6,3 +6,4 @@
 * Chapter 6: Kernel Data Structures
 * Chapter 7: Interrupts and Interrupt Handlers
 * Chapter 8: Bottom Halves and Deferring Work
+* Chapter 9: An Introduction to Kernel Synchronization

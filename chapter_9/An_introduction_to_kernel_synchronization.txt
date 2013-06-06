@@ -1,0 +1,41 @@
+• Locks are advisory and voluntary. Locks are entirely a programming constructure that the programmer must take advantage of. Nothing prevents you from writing code that manipulates the C.S. without a lock.
+
+• Causes of concurrency:
+1. In user-space:
+i)  pseudo-concurrency: 
+Because user-space process is preemptible and schedulable, i.e. two things do not actually happen at the same time but interleave with each other.
+ii) true-concurrency:
+On a symmetrical multiprocessing machine, two processes can actually be executed in a critical region at the exact same time.
+
+2. In kernel-space:
+The kernel has similar causes of concurrency:
+i)   Interrupts: an interrupt can occur asynchronously at almost any time.
+ii)  Softirqs and tasklets: the kernel can raise or schedule a softirq or tasklet at almost any time, interrupting the currently executing code.
+iii) Kernel prremption: because kernel is preemptive, one task in kernel can preempt another.
+iv)  Sleeping and synchronization with user-space: A task in the kernel can sleep and thus invoke the scheduler, resulting in the running of a new process.
+v)   Symmetrical multiprocessing: Two or more processors can execute kernel code at exactly the same time.
+
+3. Code that is safe from concurrent access from an interrupt handler is said to be interrupt-safe. Code that is safe from concurrency on symmetrical multiprocessing machines is SMP-safe. Code that is safe from concurrency with kernel preemption is preempt-safe.
+
+4. Knowing what to protect:
+It's often easier to identify what data does not need protection. i) Obviously, any data that is local to one particular thread of execution doesn't need locking. ii) Likewise, data that is accessed by only a specific task does not require locking. (Because a process can execute on only one processor at a time.)
+
+• SMP V.S. UP:
+Linux kernel is configurable at compile time. If CONFIG_SMP is unset, then unnecessary code is not compiled into kernel image. But in your code, provide appropriate protection for the most pessimistic case, i.e. SMP with kernel preemption.
+Whenever you write your kernel code, you should ask yourself these questions:
+i)   Is the data global? Can a thread of execution other than the current one access it?
+ii)  Is the data shared between process context and interrupt context? Is it shared between two different interrupt handlers?
+iii) If a process is preempted while accessing this data, can the newly scheduled process access the same data?
+iv)  Can the current process sleep/block on anything? If it does, in what state does that leave any shared data?
+v)   What prevents the data from being freed out from under me?
+vi)  What happens if this function is called again on another processor?
+
+• Deadlocks:
+A few ways to write the deadlock-free code:
+i)   Implement lock ordering. The order of unlock doesn't matter with respect to deadlock, although it's common practice to release the locks in an order inverse to the order they're acquired.
+ii)  Prevent starvation: Ask yourself, does this code always finish? If foo doesn't occur, will bar wait forever?
+iii) Do not double acquire the same lock, thus preventing self-deadlock. Linux doesn't provide recursive locks, and this is widely considered a good thing. Although recursive locks may alleviate self-deadlock problem, but they very readily lead to sloppy locking semantics.
+iv)  Design for simplicity. Complexity in the locking scheme invites deadlocks.
+
+• Contention and Scalability:
+
