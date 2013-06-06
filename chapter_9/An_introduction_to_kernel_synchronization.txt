@@ -38,4 +38,7 @@ iii) Do not double acquire the same lock, thus preventing self-deadlock. Linux d
 iv)  Design for simplicity. Complexity in the locking scheme invites deadlocks.
 
 • Contention and Scalability:
-
+Because a lock's job is to serialize access to resource, it comes no surprise that locks can slow down a system's performance. A highly contended lock can become a bottleneck in the system.
+Scalability is a measurement of how well a system can be expanded. In operating systems, we talk of the scalability with a large number of processes, a large number of processors, large amount of memory.
+Generally, scalability improvement is a good thing because it improves linux's performance on larger and more powerful systems. But rampant scalability "improvements" can lead to decrease in performance on smaller SMP and UP machines, because smaller machines may not need such fine-grained locking, but will nonetheless need to put up with the increased complexity and overhead.
+Locking that is too coarse results in poor scalability if there is high lock contention; but locking that is too fine results in wasteful overhead if there is little lock contention. Both scenarios equate to poor performance, start simple and grow in complexity only as needed. Simplicity is the key.
