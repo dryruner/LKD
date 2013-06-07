@@ -7,3 +7,4 @@
 * Chapter 7: Interrupts and Interrupt Handlers
 * Chapter 8: Bottom Halves and Deferring Work
 * Chapter 9: An Introduction to Kernel Synchronization
+* Chapter 10: Kernel Synchronization Methods
