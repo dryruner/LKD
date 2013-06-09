@@ -313,4 +313,24 @@ put_cpu();
 =========================================================================
 
 9. Ordering and barriers:
+All processors that do reorder reads or writes provide machine instructions to enforce ordering requirements. It is also possible to instruct the compiler not to reorder instructions around a given point. These instructions are called barriers.
 
+rmb() method provides a read memory barrier. It ensures that no loads are reordered across the rmb() call. That is, no loads prior to the call will be reordered to after the call. And no loads after the call will be reordered to before the call.
+wmb() provides a write barrier.
+mb() method provides both a read barrier and a write barrier. No loads or stores will be reordered across a call to mb().
+A variant of rmb(), read_barrier_depends(), provides a read barrier but only for loads on which subsequent loads depend. All reads prior to the barrier are guaranteed to complete before any reads after the barrier that depend on the reads prior to the barrier. On some architectures, read_barrier_depends() is much quicker than rmb() because it is not needed and is, thus, a nop.
+
+The macros smp_rmb(), smp_wmb(), and smp_read_depends() provide a useful optimization. On SMP kernels they're defined as memory barriers, whereas on UP kernels they're defined only as compiler barriers. 
+The barrier() method prevents the compiler from optimizing loads or stores across the call. The previous memory barriers also function as compiler barriers, but a compiler barrier is much lighter than memory barrier. Indeed, a compiler barrier is practically free, because it simply prevents the compiler from possibly rearranging things.
+
+Note that the actual effects of the barriers vary for each architecture. For example, if a machine doesn't perform out-of-order stores (e.x. x86 doesn't), wmb() does nothing.
+
+rmb();                          Prevents loads from being reordered acrossed the barrier.
+read_barrier_depends();         Prevents data-dependent loads from being reordered across the barrier.
+wmb();                          ........ stores ..........
+mb();                           ........ loads and stores ........
+smp_rmb();                      Provides a rmb() on SMP, and on UP provides a barrier()
+smp_reaD_barrier_depends();     Provides a read_barrier_depend() on SMP, and on UP provides a barrier()
+smp_wmb();                      Provides a wmb() on SMP, and on UP provides a barrier()
+smp_mb();                       .........  mp() ....................................
+barrier();                      Provides a compiler barrier: prevents the compiler from optimizing stores or loads across the barrier.
