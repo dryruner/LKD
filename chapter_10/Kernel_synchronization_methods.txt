@@ -200,4 +200,94 @@ up_write(&mr_sem);
 • Reader-writer semaphores have a unique method that their reader-writer spin lock cousins do not have: downgrade_write(). This function atomically converts an acquired write lock to a read lock.
 
 4. Mutexes
+Semaphores are rather generic and do not impose many usage constrains. This makes them useful for managing exclusive access in obscure situations, such as complicated dances between the kernel and user space.
+Now linux kernel implements mutex, represented by struct mutex. It is similar to a semaphore with count of 1, but it has a simpler interface, more efficient performance, and additional constrains on its use.
+DEFINE_MUTEX(name);                To statically define a mutex
+mutex_init(struct mutex*);         To dynamically initialize a mutex
+mutex_lock(struct mutex*);         Locks the given mutex; sleeps if the lock is contended
+mutex_unlock(struct mutex*);        
+mutex_trylock(struct mutex*);      Tries to acquire the given mutex; returns 1 if the lock is successfully acquired, and 0 otherwise.
+mutex_is_locked(struct mutex*);    Returns 1 if the lock is locked and 0 otherwise.
+
+• The simplicity and efficiency of the mutex comes from the additional constrains it imposes on its users. Mutex has a stricter, narrower use case:
+i)   Whoever locks the mutex must unlock it. That is, you cannot lock a mutex in one context and then unlock it in another. This means that the mutex isn't suitable for more complicated synchronizations between kernel and user-space. (But most use cases, cleanly lock and unlock from the same context.)
+ii)  Recursive locks and unlocks are not allowed. That is, you cannot recursively acquire the same mutex; and you cannot unlock an unlocked mutex.
+iii) A process cannot exit while holding a mutex.
+iv)  A mutex cannot be acquired by an interrupt handler or bottom half, even with mutex_trylock().
+v)   A mutex can be managed only via the official API: it must be initialized via the methods described in this section and cannot be copied, hand initialized, or reinitialized.
+
+When the kernel configuration option CONFIG_DEBUG_MUTEXES is enabled, a multitude of debugging checks ensure theses constrains are always upheld. CONFIG_DEBUG_SPINLOCK enables a handful of debugging checks in the spin lock code. For additional debugging of lock lifecycles, enable CONFIG_DEBUG_LOCK_ALLOC.
+Unless one of mutex's additional constrains prevent you from using them, prefer to use the new mutex type to semaphores with count of 1.
+
+5. Completion variables:
+Using completion variables is an easy way to synchronize between 2 tasks in the kernel when one task needs to signal the other that one event has occured. One task waits on the completion variable while another task performs some work. When the other task has completed the work, it uses the completion variable to wake up any waiting tasks. (It is somewhat like condition variables, but it's much easier to use and doesn't require the mutex.)
+Completion variables are represented by the struct completion type, which is defined in <linux/completion.h>
+
+DECLARE_COMPLETION(mr_comp);                Statically create a completion variable
+init_completion(struct completion*);        Initializes the given completion variable
+wait_for_completion(struct completion*);    Waits for the given completion variable to be signaled
+complete(struct completion*);               Signals any waiting tasks to wake up
+
+For sample usages of completion variables, see kernel/sched.c and kernel/fork.c. A common usage is to have a completion variable dynamically created as a member of data structure. Kernel code waiting for the initialization of the data structure calls wait_for_completion(). When the initialization is complete, the waiting tasks are awakened via a call to complete().
+
+6. BKL: the Big Kernel Lock
+BKL is a global spin lock that was created to ease the transition from Linux's original SMP implementation to fine-grained locking. The BKL has some interesting properties:
+• You can sleep while hoding the BKL. (This is different from normal spin locks) The lock is automatically dropped when the task is unscheduled and reacquired when the task is rescheduled. (It is somewhat like condition variables again...) This does not mean it is always safe to sleep while holding the BKL, merely that you can and you won't deadlock.
+• The BKL is a recursive lock. A single process could acquire the lock multiple times and not deadlock, this is different from normal spin locks.
+• You can use BKL only in process context. Unlike spin locks, you cannot acquire the BKL in interrupt context.
+• New users of the BKL are forbidden. With every kernel release, fewer and fewer drivers and subsystems rely on the BKL.
+
+The following interfaces are declared in <linux/smp_lock.h>:
+lock_kernel();           Acquires the BKL
+unlock_kernel();         Releases the BKL
+kernel_locked();         Returns nonzero if the lock is held, and 0 otherwise. (UP always returns nonzero.)
+
+• The BKL also disables kernel preemption while it is held. On UP kernels, the BKL code doesn't actually perform any physical locking.
+• One of the major issues concerning the BKL is determining what the lock is protecting. Too often the BKL is seemingly associated with code instead of data. This makes replacing BKL uses with a spin lock difficult because it is not easy to determine just what is being locked.
+
+7. Sequential locks:
+The sequential lock is a new type of lock introduced in the 2.6 kernel. It provides a simple mechanism for reading and writing shared data. It works by maintaining a sequence counter. Whenever the data in question is writing to, a lock is obtained and a sequence number is incremented. Prior to and after reading the data, the sequence number is read; if the values are the same, a write didn't begin in the middle of read. Further, if the values are even, a write is not underway. (Grabbing the write lock makes the value odd, whereas releasing it makes it even because the lock starts at 0.)
+=================================================================================
+To define a seq lock:
+seqlock_t mr_seq_lock = DEFINE_SEQLOCK(mr_seq_lock);
+
+The write path is then:
+write_seqlcok(&mr_seq_lock);
+/* write lock is obtained... */
+write_sequnlock(&mr_seq_lock);
+
+This looks like normal spin lock code. The oddness comes in with the read path:
+
+unsigned long seq;
+do{
+	seq = read_seqbegin(&mr_seq_lock);
+	/* read data here... */
+}while(read_seqretry(&mr_seq_lock, seq));
+=================================================================================
+Seq locks are useful to provide a lightweight and scalable lock for use with many readers and a few writers. Seq locks, however, favor writers over readers. Seq locks are ideal when your locking needs meet most or all of the following requirements:
+• Your data has a lot of readers. Youra data has few writers
+• Although few in number, you want to favor writers over readers and never allow readers to starve writers.
+• Your data is simple, such as a simple structure or even a single integer that, for whatever reason, cannot be made atomic.
+
+A prominent use of the seq locks is jiffies, the variable that stores a linux machine's uptime. Jiffies holds a 64-bit count of the number of clock ticks since the machine booted. On machines that cannot atomically read the full 64-bit jiffies_64 variable, get_jiffies_64() is implemented using locks:
+=============================================
+u64 get_jiffies_64(void)
+{
+	unsigned long seq;
+	u64 ret;
+	do{
+		seq = read_seqbegin(&xtime_lock);
+		ret = jiffies_64;
+	}while(read_seqretry(&xtime_lock, seq));
+	return ret;
+}
+=============================================
+Updating jiffies during timer interrupt, in turns, grabs the write variant of the seq lock:
+===============================
+write_seqlock(&xtime_lock);
+jiffies_64 += 1;
+write_sequnlock(&xtime_lock);
+===============================
+
+8. Preemption disabling:
 
