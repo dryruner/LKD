@@ -123,4 +123,81 @@ Note that you cannot "upgrade" a read lock to a write lock. For example, this co
 read_lock(&mr_rwlock);
 write_lock(&mr_rwlock);
 ========================
+Executing these two functions as shown above will deadlock. Because as the writer spins (waiting for all the readers release the lock), it will never end. If you ever need to write, obtain the write lock from the start. If the line between your readers and writers is muddled, it might be an indication that you do need to use reader-writer locks. In this case, a normal spin lock is optimal.
+It is safe for multiple readers to obtain the same lock. In fact, it is safe for the same thread to recursively obtain the same read lock. If you have only readers in interrupt handlers but no writers, you can mix the use of the "interrupt disabling" locks. (read_lock_irq()) You can use read_lock() instead of read_lock_irqsave() for reader protection. You will still need to disable interrupts for write access, i.e. write_lock_irqsave(), otherwise a reader in an interrupt could deadlock on the held write lock.
+
+read_lock();                 
+read_lock_irq();             Disables local interrupts and acquires given lock for reading
+read_lock_irqsave();         Saves the current state of local interrupts, disables local interrupts, and acquires the given lock for reading
+read_unlock();
+read_unlock_irq();           Releases given lock and enables local interrupts
+read_unlock_irqrestore();    Releases given lock and restores local interrupts to the given previous state
+write_lock();
+write_lock_irq();            
+write_lock_irqsave();
+write_unlock();
+write_unlock_irq();
+write_unlock_irqrestore();
+write_trylock();             Tries to acquire given lock for writing; if unavailable, returns nonzero
+rwlock_init();               Initializes given rwlock_t
+
+• A final important consideration in using the linux reader-writer spin locks is that they favor readers over writers. 
+Spin locks provide a quick and simple lock. The spinning behavior is optimal for short hold times and code that cannot sleep (interrupt handlers, for example.) In case where the sleep time might be long or you potentially need to sleep while holding the lock, the semaphore is a solution.
+
+3. Semaphores:
+Semaphores in Linux are sleeping locks. When a task attempts to acquire a semaphore that is unavailable, the semaphore places the task onto a wait queue and puts the task to sleep. The processor is then free to execute other code. When the semaphore becomes available, one of the tasks on the wait queue is awakened so that it can then acquire the semaphore. This provides better processor utilization than spin locks, but semaphores have much greater overhead than spin locks.
+
+• Semaphores are well suited to locks that are held for a long time. And because a thread of execution sleeps on lock contention, semaphores must be obtained only in process context because interrupt context is not schedulable.
+• You can (although you might not want to) sleep while holding a semaphore because you will not deadlock when another process acquires the same semaphore. (It will just go to sleep and eventually let you continue.)
+• You cannot hold a spin lock while you acquire a semaphore. Because you might have to sleep while waiting for the semaphore, and you cannot sleep while holding a spin lock.
+• If your code needs to sleep, which is often the case when synchronization with user-space, semaphore is the only solution. But if you do have a choice, the decision between semaphore and spin lock should be based on lock hold time. Additionally, unlike spin locks, semaphores do not disable kernel preemption, so consequently, code holding a semaphore can be preempted. This means semaphores do not adversely affect scheduling latency.
+
+• Creating and Initializing semaphores:
+The semaphore implementation is architecture-dependent and defined in <asm/semaphore.h>. The struct semaphore type represents semaphores:
+=========================
+struct semaphore name;
+sema_init(&name, count);   // initialize the counting semaphore to count
+=========================
+A more common use to create a mutex (with count == 1) is as follows:
+============================
+static DECLARE_MUTEX(name); // name is the variable name of the mutex (binary semaphore)
+============================
+To initialize a dynamically created mutex, you can:
+=================
+init_MUTEX(sem);
+=================
+
+• Using semaphores:
+down_interruptible() (like P() operation) attempts to acquire the given semaphore, if it is unavailable, it places the calling process to sleep in the TASK_INTERRUPTIBLE state. (it could be waken up by a signal.) If the task receives a signal while waiting for the semaphore, it is awakened and down_interruptible() returns -EINTR. 
+Alternatively, the function down() places the task in the TASK_UNINTERRUPTIBLE state when it sleeps. You can use down_trylock() to try to acquire the given semaphores without blocking. If the semaphore is already held, the fucntion immediately returns nonzero. Otherwise, it returns 0 and you successfully hold the lock.
+
+sema_init(struct semaphore*, int);           Initializes the dynamically created semaphore to the given count.
+init_MUTEX(struct semaphore*);               Initializes the dynamically created semaphore with the count of 1.
+init_MUTEX_LOCKED(struct semaphore*);        Initializes the dynamically created semaphore with a count of 0. (So it is initially locked.)
+down_interruptible(struct semaphore*);       Tries to acquire the given semaphore and enter interruptible sleep if it is contended.
+down(struct semaphore*);                     Tries to acquire the given semaphore and enter uninterruptible sleep if it is contended.
+down_trylock(struct semaphore*);             Tries to acquire the given semaphore and immediately return nonzero if it is contended.
+up(struct semaphore*);                       Releases the given semaphore and wakes a waiting task, if any.
+
+• Reader-writer semaphores:
+Reader-writer semaphores created dynamically are initialized via:
+======================================
+init_rwsem(struct rw_semaphore* sem);
+======================================
+All reader-writer semaphores are mutexes! Although they enforce mutual exclusion only for writers, not readers. And all reader-writer locks use uninterruptible sleep, so there's only one version of each down(). For example:
+===========================================
+static DECLARE_RWSEM(mr_rwsem);
+down_read(&mr_rwsem);
+/* critical section, read only... */
+up_read(&mr_rwsem);
+
+....
+down_write(&mr_rwsem);
+/* critical section, read and write... */
+up_write(&mr_sem);
+===========================================
+• down_read_trylock() and down_write_trylock(): they both return nonzero if lock is successfully acquired and 0 if it is currently contended. This is the opposite of the normal behavior (return value)!
+• Reader-writer semaphores have a unique method that their reader-writer spin lock cousins do not have: downgrade_write(). This function atomically converts an acquired write lock to a read lock.
+
+4. Mutexes
 
