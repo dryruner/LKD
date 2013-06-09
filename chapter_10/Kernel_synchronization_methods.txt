@@ -1,0 +1,126 @@
+1. Atomic operations:
+Most architectures contain instructions that provide atomic versions of simple arithmetic operations; other architectures, lacking direct atomic operations, provide an operation to lock the memory bus for a single operation.
+i)  Atomic integer operations:
+============================
+typedef struct{
+	volatile int counter;
+}atomic_t;
+============================
+Despite being an integer, and thus 32 bits on all the machines that Linux supports, develops and their code ONCE had to assume that an atomic_t was no larger than 24 bits in size. The SPARC port in Linux used the lower 8 bits of the 32 bits to implement lock. But now, such limitation is no more.
+
+A common use of the atomic integer operations is to implement counters, using atomic operations is much lighter in weight than locks. Another use of the atomic integer operations is atomically performing an operation and testing the result. All the operations implemented on a specific architecture can be found in <asm/atomic.h>
+ATOMIC_INIT(int i);                            At declaration, initialize to i
+int atomic_read(atomic_t* v);                  Atomically read the integer value of v
+void atomic_set(atomic_t* v, int i);           Atomically set v equal to i
+void atomic_add(int i, atomic_t* v);           Atomically add i to v
+void atomic_sub(int i, atomic_t* v);           
+void atomic_inc(atomic_t* v);                  
+void atomic_dec(atomic_t* v);                  
+int atomic_sub_and_test(int i, atomic_t* v);   Atomically subtract i from v and return true if the result is 0, otherwise return false
+int atomic_add_negative(int i, atomic_t* v);   Atomically add i to v and return true if the result is negative, otherwise return false
+int atomic_add_return(int i, atomic_t* v);     Atomically add i to v and return the result
+int atomic_sub_return(int i, atomic_t* v);     
+int atomic_inc_return(int i, atomic_t* v);
+int atomic_dec_return(int i, atomic_t* v);
+int atomic_dec_and_test(atomic_t* v);          Atomically decrement v by 1 and return true if the result is 0, otherwise return false
+int atomic_inc_and_test(atomic_t* v);          Atomically increment v by 1 and return true if the result is 0, otherwise return false
+
+Atomicity V.S. Ordering:
+Atomicity: happens all or none.
+Ordering: is enforced via barrier operations
+
+In the code it is usually preferred to choose atomic operations over more complicated locking mechanisms. On most architectures, 1 or 2 atomic operations incur less overhead and less cache-line thrashing than a more complicated synchronization method. As with performance-sensitive code, testing multiple approaches is always smart.
+
+64-bit atomic operations:
+Note that the size of atomic_t cannot change between architectures, so atomic_t is 32-bit even on 64-bit architectures.
+============================
+typedef struct{
+	volatile long counter;
+}atomic64_t;
+============================
+64-bit Atomic integer operations have the similar APIs as 32-bit, just change the prefix from atomic_ to atomic64_ .
+For portability between all Linux's supported architectures, developers should use the 32-bit type atomic_t; the 64-bit type atomic64_t is reserved for code that is both architecture-specific and that requires 64-bits.
+
+ii) Atomic bitwise operations:
+Atomic bitwise operations are also architecture-specific and defined in <asm/bitops.h>
+The bitwise functions operate on generic memory addresses. The arguments are a pointer and a bit number. Bit 0 is the LSB, and on a 32-bit machine, bit 31 is the MSB, and bit 32 is the LSB of next word.
+void set_bit(int nr, void* addr);               Atomically set the nr-th bit starting from addr.
+void clear_bit(int nr, void* addr);             Atomically clear the nr-th bit starting from addr.
+void change_bit(int nr, void* addr);            Atomically flip the value of nr-th bit starting from addr.
+int test_and_set_bit(int nr, void* addr);       Atomically set the nr-th bit starting from addr and return the previous value.
+int test_and_clear_bit(int nr, void* addr);     Atomically clear the nr-th bit starting from addr and return the previous value.
+int test_and_change_bit(int nr, void* addr);    Atomically flip the nr-th bit starting from addr and return the previous value.
+int test_bit(void* addr);                       Atomically return the value of the nr-th bit starting from addr.
+
+Nonatomic versions of all the bitwise functions are also provided. Just add 2 underscores "__" before the atomic versions.
+
+The kernel also provides routines to find the first set/unset bit starting at a given address:
+int find_first_bit(unsigned long* addr, unsigned int size);
+int find_first_zero_bit(unsigned long* addr, unsigned int size);
+Both functions take a pointer as their first argument and the number of bits in total to search as their second. They return the bit number of the first set or first unset bit, respectively. If just need to search only a word, the functions __ffs() and __ffz() are optimal, they just have 1 argument, the word in which to search.
+
+2. Spin locks:
+Spin lock is a lock that can be held by at most 1 thread of execution. If a spin lock is contended, i.e. trying to acquire a spin lock that is already held, then the thread busy loops, spins, (wasting processor time) waiting for the lock to become available.
+The key point of spin lock is that holding the lock for a short period of time. It's wise to hold the spin locks for less than the duration of 2 context switches, or just try to hold the spin locks for as little time as possible. (An alternative behavior of when the lock is contended is to put the concurrent thread to sleep and wake it up when it becomes available. Such kind of lock is called semaphore.)
+• Spin lock methods:
+Spin locks are architecture-dependent and implemented in assembly. The architecture-dependent code is defined in <asm/spinlock.h>, the actual useful interfaces are defined in <linux/spinlock.h>. 
+
+The lock can be held simultaneously by at most only 1 thread of execution, this provides the needed protection from concurrency on multiprocessing machines. On uniprocessor machines, spin locks are compiled away and do not exist; they simply act as markers to disable and enable kernel preemption. If kernel preemption is disabled, the lock is compiled away entirely.
+
+Linux spin locks are not recursive.
+
+Spin locks can be used in interrupt handlers, whereas semaphores cannot be used because they sleep. If a spin lock is used in an interrupt handler, you must also disable local interrupts before obtaining the lock. (Otherwise it is possible for an interrupt handler to interrupt kernel code while the lock is held and attempt to reacquire the lock. In such condition, it will deadlock forever.) But note that you only need to disable interrupts on the current processor. Because if an interrupt occurs on a different processor, and it spins on the same lock, it doesn't prevent the lock from being released eventually.
+
+The kernel also provides an interface that conveniently disables interrupts and acquires the lock:
+==========================================
+DEFINE_SPINLOCK(mr_lock);
+unsigned long flags;
+
+spin_lock_irqsave(&mr_lock, flags);
+/* critical region... */
+spin_unlock_irqrestore(&mr_lock, flags);
+==========================================
+The routine spin_lock_irqsave(): i) saves the current state of interrupts; ii) disables them locally; iii) obtain the given lock. Conversely, spin_unlock_irqrestore() unlocks the given lock and returns interrupts to their previous state. This way, if interrupts were initially disabled, your code would not erroneously enable them, but instead keep them disabled. Note that the flags variable is seemingly passed by value, this is because the lock routines are implemented partially as macros.
+
+On UP systems, the previous example must still disable interrupts to prevent an interrupt handler from accessing the shared data, but the lock mechanism is compiled away. The lock and unlock also disable and enable kernel preemption, respectively.
+
+Lock data, not code!
+
+Spin lock methods:
+spin_lock();                  acquire given lock
+spin_lock_irq();              disable local interrupts and acquire given lock
+spin_lock_irqsave();          save current state of local interrupts, disables local interrupts, and acquires the given lock
+spin_unlock();                release given lock
+spin_unlock_irq();            release given lock and enable local interrupts
+spin_unlock_irqrestore();     release given lock and restores local interrupts to the given previous state
+spin_lock_init();             dynamically initializes given spinlock_t
+spin_trylock();               try to acquire the given spin lock; if unavailable return nonzero
+spin_is_locked();             return nonzero if the given lock is currently acquired, otherwise returns 0
+
+• Spin locks and bottom halves:
+Certain locking precautions must be taken when working with bottom halves. spin_lock_bh() obtains the given lock and disables all the bottom halves. spin_unlock_bh() performs the inverse.
+Because bottom halves might preempt process context code (like work queues), so if data is shared between a bottom half and process context, you must protect the data in process context with both a spin lock and disabling of bottom halves. Likewise, because an interrupt handler might preempt a bottom half, if data is shared between an interrupt handler and a bottom half, you must obtain the appropriate lock and disable interrupts.
+
+Since two tasklets of the same type cannot run simultaneously on different processors, so there's no need to protect data used only within a single type of tasklet. If the data is shared between two different tasklets, you must obtain a normal spin lock before accessing the data in bottom half. You do not need to disable bottom halves because a tasklet never preempts another tasklet running on the same processor.
+
+And with softirqs, regardless of whether it is the same type of softirqs, if data is shared by softirqs, it must be protected with a lock. A softirq never preempts another softirq, so there's no need to disable bottom halves. (The only event that can preempt a softirq is an interrupt handler.)
+
+• Reader-writer spin locks:
+Reader-writer spin locks provide separate reader and writer variants of the lock. Usage is similar to spin locks:
+============================================
+DEACARE_RWLOCK(mr_rwlock);
+Then, in the reader code path:
+read_lock(&mr_lock);
+/* critical section (read only)... */
+read_unlock(&mr_lock);
+In the writer code path:
+write_lock(&mr_rwlock);
+/* critical section (read and write)... */
+write_unlock(&mr_rwlock);
+============================================
+Note that you cannot "upgrade" a read lock to a write lock. For example, this code snippet:
+========================
+read_lock(&mr_rwlock);
+write_lock(&mr_rwlock);
+========================
+
