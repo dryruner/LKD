@@ -13,4 +13,50 @@ v)   Updating resource usage and processor time statistics.
 • The tick rate: HZ
 The frequency of system timer (the tick rate) is programmed on system boot based on a static preprocessor define, HZ. The value of HZ differs for each supported architecture. The kernel defines the value in <asm/param.h>. The tick rate has a frequency of HZ hertz. When writing kernel code, never assume that HZ has any given value.
 
-HZ is now a configuration option, although the most common value is 100 or 1000. Increasing the tick rate means 
+HZ is now a configuration option, although the most common value is 100 or 1000. Increasing the tick rate means the timer interrupt runs more frequently. This has the following benefits:
+i)  The timer interrupt has a higher resolution, and consequently, all timed events have a higher resolution.
+ii) The accuracy of timed events improves.
+Assuming the kernel starts timers at random times, the average timer is off by half the period of the timer interrupt because timers might expire at any time, but are executed only on occurrences of the timer interrupt.
+
+• Advantages with a larger HZ:
+i)   Kernel timers execute with finer resolution, and increased accuracy.
+ii)  System calls such as poll() and select() that optionally employ a timeout value execute with improved precision.
+iii) Measurements, such as resource usage or the system uptime, are recorded with a finer resolution.
+iv)  Process preemption occurs more accurately, which results in decreased scheduling latency. Assuming a given process is running and has a2 milliseconds of its timeslice remaining. In 2 milliseconds, the scheduler SHOULD preempt the running process and begin executing a new process. Unfortunately, this event doesn't occur until the next timer interrupt, which might not be in 2 milliseconds. At worst the next timer interrupt might be 1/HZ of a second away. Of course, this all balances out and fairness is preserved, because all tasks receive the same imprecision in scheduling - but that is not the issue. The problem stems from the latency created by the delayed preemption. If the to-be-scheduled task had something time-sensitive to do, such as refill an audio buffer, the delay might not be acceptable.
+
+• Disadvantages with a larger HZ:
+A higher tick rate implies more frequent timer interrupts, which implies higher overhead, because the processor must spend more time executing the timer interrupt. This adds up to not just less processor time available for other work, but also a more frequent thrashing of the processor's cache and increase in power consumption.
+
+• A tickless OS:
+Linux kernel supports an option known as a tickless operation. When a kernel is built with the CONFIG_HZ configuration option set, the system dynamically schedules the timer interrupt in accordance with pending timers. 
+
+2. jiffies:
+The jiffies variable is declared in <linux/jiffies.h>: 
+extern unsigned long volatile jiffies;
+It holds the number of ticks that have occurred since the system booted. On boot this variable is initialized to 0, and it is incremented by 1 during each timer interrupt, so the system uptime is jiffies/HZ seconds.
+
+• The jiffies variable has always been an unsigned long, and therefore 32 bits in size on 32-bit architecture and 64 bits on 64-bit architecture. If jiffies is stored in 32 bits, an with HZ = 100, then jiffies will overflow in 497 days; if jiffies is stored in 64 bits, then for any reasonable HZ value the jiffies variable would never overflow in anyone's lifetime.
+
+• Code that accesses jiffies simply reads the lower 32 bits of jiffies_64. The function get_jiffies_64() can be used to read the full 64-bit value. On 64-bit architectures, jiffies_64 and jiffies refer to the same thing.
+
+• jiffies wraparound:
+The kernel provides 4 macros for comparing tick counts that correctly handle wraparound in the tick count. They are in <linux/jiffies.h>:
+#define time_after(unknown, known) ((long)(known) - (long)(unknown) < 0)
+#define time_before(unknown, known) ((long)(unknown) - (long)(known) < 0)
+#define time_after_eq(unknown, known) ((long)(unknown) - (long)(known) >= 0)
+#define time_before_eq(unknown, known) ((long)(known) - (long)(unknown) >= 0)
+
+The unknown parameter is typically jiffies and the known parameter is the value against which you want to compare. (Could search web or see P216 why these macro could prevent jiffies-wraparound.)
+
+• User-space and HZ:
+Changing HZ would scale various exported values by some constant - without user-space knowing! Uptime would read 20 hours when it was in fact 2! To prevent such problems, the kernel needs to scale all exported jiffies values. It does this by defining USER_HZ, which is the HZ value that user-space expects. The function jiffies_to_clock_t(), defined in kernel/time.c, is used to scale a tick count in terms of HZ to a tick count in terms of USER_HZ. See the source code for more details. A more complicated algorithm is used if the values are not integer multiples. Finally, the function jiffies_64_to_clock_t() is provided to convert a 64-bit jiffies value from HZ to USER_HZ units.
+
+• Hardware clocks and timers:
+Architectures provide 2 hardware devices to help with time keeping: the system timer and the real-time clock.
+i)  Real-time clock (RTC):
+RTC provides a nonvolatile device for storing the system time. On boot, the kernel reads the RTC and uses it to initialize the wall time, which is stored in xtime variable.
+ii) System timer:
+The idea behind the system timer, regardless of architecture, is the same - to provide a mechanism for driving an interrupt at a periodic rate. On x86, the primary system timer is the programmable interrupt timer (PIT). The kernel programs the PIT on boot to drive the system timer interrupt at HZ frequency.
+
+3. The timer interrupt handler:
+
