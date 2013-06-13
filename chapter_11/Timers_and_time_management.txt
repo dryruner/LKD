@@ -1,0 +1,16 @@
+• i)  Events that occur periodically, say, every 10ms, are driven by the system timer. System timer is a programmable piece of hardware that issues an interrupt at a fixed frequency. The interrupt handler for this timer - called timer interrupt - updates the system time and performs periodic work. The system timer and its timer interrupt are central to Linux and a large focus of this chapter.
+  ii) Dynamic timers, the facility used to schedule events that run once after a specified time has elapsed. Kernel can create and destroy such timers dynamically.
+
+1. Kernel notion of time:
+Kernel keeps track of both wall time and system uptime. Wall time, the actual time of day, is important to user-space applications. The system uptime, the relative time since the system booted, is useful to both kernel space and user space.
+Timer interrupt is importmant to the management of the operating system. Some of the work executed periodically by the timer interrupt includes:
+i)   Updating the system uptime
+ii)  Updating the time of day
+iii) On an SMP system, ensuring that the scheduler runqueues are balanced and, if not, balancing them
+iv)  Running any dynamic timers that have expired
+v)   Updating resource usage and processor time statistics.
+
+• The tick rate: HZ
+The frequency of system timer (the tick rate) is programmed on system boot based on a static preprocessor define, HZ. The value of HZ differs for each supported architecture. The kernel defines the value in <asm/param.h>. The tick rate has a frequency of HZ hertz. When writing kernel code, never assume that HZ has any given value.
+
+HZ is now a configuration option, although the most common value is 100 or 1000. Increasing the tick rate means 
