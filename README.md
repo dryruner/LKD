@@ -8,3 +8,4 @@
 * Chapter 8: Bottom Halves and Deferring Work
 * Chapter 9: An Introduction to Kernel Synchronization
 * Chapter 10: Kernel Synchronization Methods
+* Chapter 11: Timers and Time Management
