@@ -9,3 +9,4 @@
 * Chapter 9: An Introduction to Kernel Synchronization
 * Chapter 10: Kernel Synchronization Methods
 * Chapter 11: Timers and Time Management
+* Chapter 12: Memory Management
