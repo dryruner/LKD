@@ -62,7 +62,7 @@ void* kmalloc(size_t size, gfp_t flags);
 The function returns a pointer to a region of memory that is at least size bytes in length. The region of memory allocated is physically contiguous. On error it returns NULL.
 • gfp_t flags:
 Flag (gfp_t type) is defined in <linux/types.h> as unsigned int. The flags are broken into 3 categories: i) action modifiers; ii) zone modifiers; iii) types.
-i)  Action modifiers: 
+i)   Action modifiers: 
 All the flags, action modifiers included, are declared in <linux/gfp.h>. The file <linux/slab.h> includes this header:
 Flag                  Description
 __GFP_WAIT            The allocator can sleep
@@ -80,5 +80,63 @@ __GFP_RECLAIMABLE     The allocator marks the pages reclaimable.
 __GFP_COMP            The allocator adds compound page metadata.
 Most allocations specify these modifiers but do so indirectly by way of the type flags.
 
-ii) Zone modifiers:
+ii)  Zone modifiers:
+There're only 3 zone modifiers because there're only 3 zones other than ZONE_NORMAL (which is by default allocations originate, it could fulfill allocations from any zone. The kernel prefers ZONE_NORMAL to ensure that the other zones have free pages when they are needed.) 
+Flag                  Description
+__GFP_DMA             Allocates only from ZONE_DMA
+__GFP_DMA32           Allocates only from ZONE_DMA32
+__GFP_HIGHMEM         Allocates from ZONE_HIGHMEM or ZONE_NORMAL
+If neither flag is specified, the kernel fulfills the allocation from either ZONE_DMA or ZONE_NORMAL, with a strong preference to satisfy the allocation from ZONE_NORMAL.
+• Note that you cannot specify __GFP_HIGHMEM to either __get_free_pages() or kmalloc(). Because these both return a logical address and not a page structure. It's possible that these functions would allocate memory not currently mapped in the kernel's virtual address space, and thus doesn't have a logical address. Only alloc_pages() can allocate high memory.
+
+iii) Type flags:
+Kernel code tends to use the correct type flag, and not specify the myriad of other flags it might need. This is both simpler and less error-prone.
+Flag                  Description
+GFP_ATOMIC            The allocator is high priority and must not sleep. This is the flag to use in interrupt handlers, bottom halves, while holding a spin lock, and other
+                      situations where you cannot sleep.
+GFP_NOWAIT            Like GFP_ATOMIC, except that the call will not fallback on emergency memory pools. This increases the liklihood of the memory allocation failing.
+GFP_NOIO              This allocation can block, but must not initiate disk I/O. This is the flag to use in block I/O code when you cannot cause more disk I/O, which might 
+                      lead to some unpleasant recursion.
+GFP_NOFS              This allocation can block and can initiate disk i/O if it must, but it will not initiate a filesystem operation. This is the flag to use in filesystem
+                      code when you cannot start another filesystem operation.
+GPL_KERNEL            This is a normal allocation and might block. This is the flag to use in process context when it is safe to sleep. The kernel will do whatever it has to
+                      do to obtain the memory requested by the caller. This flag should be your default choice.
+GFP_USER              This is a normal allocation and might block. This flag is used to allocate memory for user-space processes.
+GFP_HIGHUSER          This is an allocation from ZONE_HIGHMEM and might block. This flag is used to allocate memory for user-space processes.
+GFP_DMA               This is an allocation from ZONE_DMA. Device that need DMA-able memory use this flag, usually in combination with one of the preceding flags.
+
+• Modifiers behind each type flag
+Flag               Modifier flags
+GFP_ATOMIC         __GFP_HIGH
+GFP_NOWAIT         0
+GFP_NOIO           __GFP_WAIT
+GFP_NOFS           (__GFP_WAIT | __GFP_IO)
+GFP_KERNEL         (__GFP_WAIT | __GFP_IO | __GFP_FS)
+GFP_USER           (__GFP_WAIT | __GFP_IO | __GFP_FS)
+GFP_HIGHUSER       (__GFP_WAIT | __GFP_IO | __GFP_FS | __GFP_HIGHMEM)
+GFP_DMA            __GFP_DMA
+
+• Which flag to use when:
+Situation                            Solution
+Process context, can sleep           Use GFP_KERNEL
+Process context, cannot sleep        Use GFP_ATOMIC
+Interrupt handler                    Use GFP_ATOMIC
+Softirq, Tasklet                     Use GFP_ATOMIC
+Need DMA-able memory, can sleep      Use (GFP_DMA | GFP_KERNEL)
+Need DMA-able memory, cannot sleep   Use (GFP_DMA | GFP_ATOMIC)
+
+• kfree():
+void kfree(const void* ptr);
+Don't call this function on memory not previously allocated with kmalloc(), or on memory that has already been freed. Note that calling kfree(NULL) is explicitly checked for and safe.
+
+5. vmalloc():
+vmalloc() works in a similar fashion to kmalloc(), except it allocates memory that is only virtually contiguous and not necessarily physically contiguous. The kmalloc() function guarantees that the pages are physically contiguous (and virtually contiguous). It implements this by allocating potentially noncontiguous chunks of physical memory and "fixing up" the page tables to map the memory into a contiguous chunk of the logical address space. 
+For the most part, only hardware devices require physically contiguous memory allocation. Despite the fact that physically contiguous memory is required in only certain cases, most kernel code uses kmalloc() and not vmalloc(); primarily this is for performance. The vmalloc() function, to make nonphysically contiguous pages contiguous in the virtual address space, must specifically set up the page table entries. Worse, page obtained via vmalloc() must be mapped by their individual pages, which results in much greater TLB thrashing than you see when directly mapped memory is used. Because of these, vmalloc() is used only when absolutely - typically, to obtain large regions of memory. For example, when modules are dynamically inserted into the kernel, they are loaded into memory created via vmalloc().
+
+void* vmalloc(unsigned long size);
+This function returns a pointer to at least size bytes of virtually contiguous memory; on error it returns NULL. The function might sleep and thus cannot be called from interrupt context or other situations in which blocking is not permissible.
+void vfree(const void* addr);
+This function also sleeps.
+
+6. Slab layer:
 
