@@ -1,0 +1,84 @@
+1. Pages:
+The kernel treats physical pages as the basic unit of memory management. Most 32-bit architectures have 4KB pages, whereas most 64-bit architectures have 8KB pages. The kernel represents every physical page with a struct page structure, it is defined in <linux/mm_types.h>. Removing two confusing unions from the definition:
+====================================
+struct page{
+	unsigned long flags; /* stores the status of page, whether the page is dirty or whether it is locked in memory. The flags are defined in <linux/page-flags.h> */
+	atomic_t _count; /* stores how many references there are to this page. _count reaches -1 means no one is using this page, so it becomes available for a new allocation.
+					    Kernel code should use page_count(struct page*) to check, but this function returns 0 if this page isn't referenced. A page may be used by i) the page
+						cache(in this case the mapping field points to the address_space object associated with this page); ii) private data(pointed at by private); iii) as a
+						mapping in a process's page table. */
+	atomic_t _mapcount;
+	unsigned long private;
+	struct address_space* mapping;
+	pgoff_t index;
+	struct list_head lru;
+	void* virtual; /* indicates the page's virtual address. Normally this is simply the address of the page in virtual memory. Some memory(called high memory) is not 
+					  permanently mapped in the kernel's address space. In that case this field is NULL, and the page must be dynamically mapped if needed. */
+};
+====================================
+The important point to understand is that the page structure is associated with physical pages, not virtual pages. Therefore, what the structure describes is transient at best. Even if the data contained in the page continues to exist, it might not always be associated with the same page structure because of swapping and so on. The data structure's goal is to describe physical memory, not the data contained within. 
+If the page is not free, the kernel needs to know who owns the page. Possible owners include user-space processes, dynamically allocated kernel data, static kernel code, the page cache and so on.
+
+2. Zones:
+The kernel divides pages into different zones, the kernel uses zones to group pages of similar properties. Linux has to deal with 2 shortcomings of hardware with respect to memory addressing: i) Some hardware devices can perform DMA to only certain memory addresses; ii) Some architectures can physically addressing larger amounts of memory than they can virtually address, consequently some memory is not permanently mapped into kernel address space. Linux has 4 primary memory zones:
+i)   ZONE_DMA: this zone contains pages that can undergo DMA.
+ii)  ZONE_DMA32: like ZONE_DMA this zone contains pages that can undergo DMA. Unlike ZONE_DMA, these pages are accessible only by 32-bit devices.
+iii) ZONE_NORMAL: this zone contains normal, regularly mapped, pages.
+iv)  ZONE_HIGHMEM: this zone contains "high memory", which are pages not permanently mapped into the kernel's address space.
+These zones, including 2 other less notable ones, are defined in <linux/mmzone.h>. The following table lists zones on x86-32:
+Zone            Description                   Physical Memory
+ZONE_DMA        DMA-able pages                < 16MB
+ZONE_NORMAL     Normally addressable pages    16 ~ 896MB
+ZONE_HIGHMEM    Dynamically mapped pages      > 896MB
+Note that the zones do not have any physical relevance but are simply logical groupings used by the kernel to keep track of pages. Although some allocations may require pages from a particular zone, other allocations may pull from multiple zones. For example, although an allocation for DMA-able memory must originate from ZONE_DMA, a normal allocation can come from ZONE_DMA, or ZONE_NORMAL, but not both; allocations cannot cross zone boundaries. The kernel prefers to satisfy normal allocations from the normal zone, but if memory goes low, the kernel can look for pages in whatever zone is available and suitable.
+
+struct zone is defined in <linux/mmzone.h>, only 3 zones are in system, thus, only 3 of the zone structures. The lock field is a spin lock that protects the structure from concurrent access. Note that it protects just the structure and not all the pages that reside in the zone.
+
+3. Getting pages:
+All the interfaces allocate memory with page-sized granularity are declared in <linux/gfp.h>.
+struct page* alloc_pages(gfp_t gfp_mask, unsigned int order);
+This allocates 2^order contiguous physical pages and returns a pointer to the first page's page structure; on error it returns NULL. You can convert a given page to its logical address with:
+void* page_address(struct page* page);
+This function returns a pointer to the logical address of the given physical page. If you don't need the actual struct page, you can call:
+unsigned long __get_free_pages(gfp_t gfp_mask, unsigned int order);
+This function works the same as alloc_pages(), except that it directly returns the logical address of the first requested page. Because the pages are contiguous, the other pages simply follow from the first.
+If you need only one page, use the following two functions:
+struct page* alloc_page(gfp_t gfp_mask);
+unsigned long __get_free_page(gfp_t gfp_mask);
+
+• Getting zeroed pages:
+If you need the returned page filled with zeros, use the following:
+unsigned long get_zeroed_page(unsigned int gfp_mask); 
+This function allocates a single page, zero its contents, and returns a pointer to its logical address.
+
+• Freeing pages:
+void __free_pages(struct page* page, unsigned int order);
+void free_pages(unsigned long addr, unsigned int order);
+void free_page(unsigned long addr);
+You must be careful to free only pages you allocate. A kernel allocation can fail, and your code must check for and handle such errors. These low-level page functions are useful when you need page-sized chunks of physically contiguous pages. For more general byte-sized allocations, the kernel provides kmalloc().
+
+4. kmalloc():
+void* kmalloc(size_t size, gfp_t flags);
+The function returns a pointer to a region of memory that is at least size bytes in length. The region of memory allocated is physically contiguous. On error it returns NULL.
+• gfp_t flags:
+Flag (gfp_t type) is defined in <linux/types.h> as unsigned int. The flags are broken into 3 categories: i) action modifiers; ii) zone modifiers; iii) types.
+i)  Action modifiers: 
+All the flags, action modifiers included, are declared in <linux/gfp.h>. The file <linux/slab.h> includes this header:
+Flag                  Description
+__GFP_WAIT            The allocator can sleep
+__GFP_HIGH            The allocator can access emergency pools
+__GFP_IO              The allocator can start disk I/O
+__GFP_FS              The allocator can start filesystem I/O
+__GFP_COLD            The allocator should use cache cold pages
+__GFP_NOWARN          The allocator doesn't print failure warnings
+__GFP_REPEAT          The allocator repeats the allocation if it fails, but the allocation can potentially fail (repeats once)
+__GFP_NOFAIL          The allocator indefinitely repeats the allocation, the allocation cannot fail.
+__GFP_NORETRY         The allocator never retries if the allocation fails.
+__GFP_NOMEMALLOC      The allocator doesn't fall back on reserves.
+__GFP_HARDWALL        The allocator enforces "hardwall" cpuset boundaries. 
+__GFP_RECLAIMABLE     The allocator marks the pages reclaimable.
+__GFP_COMP            The allocator adds compound page metadata.
+Most allocations specify these modifiers but do so indirectly by way of the type flags.
+
+ii) Zone modifiers:
+
