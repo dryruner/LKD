@@ -10,3 +10,5 @@
 * Chapter 10: Kernel Synchronization Methods
 * Chapter 11: Timers and Time Management
 * Chapter 12: Memory Management
+* Chapter 13: The Virtual Filesystem
+* Chapter 14: The Block I/O Layer
