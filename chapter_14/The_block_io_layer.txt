@@ -30,4 +30,76 @@ The physical page in memory to which a given buffers corresponds is the page poi
 
 The purpose of a buffer head is to describe this mapping between the on-disk block and the physical in-memory buffer (which is a sequence of bytes on a specific page). Acting as a descriptor of this disk_block-to-physical_page mapping is buffer_head's only role in kernel.
 
+buffer_head has two problems:
+i) The buffer head was a large and unwieldy data structure, and kernel prefers to work in terms of pages. ii) The buffer head only describes a single buffer, when used as the container for all I/O operations, the buffer head forces the kernel to break up potentially large block I/O operations into multiple buffer_head structures. This results in needless overhead and space consumption. So 2.5 kernel introduced a new, flexible, and lightweight container for block I/O operations - the bio structure.
+
+3. The bio structure:
+Defined in <linux/bio.h>, bio represents block I/O operations that are in flight(active) as a list of segments. A segment is a chunk of a buffer that is contiguous in memory; thus, individual buffers need not be contiguous in memory. The bio structure provides the capability for the kernel to perform block I/O operations of even a single buffer from multiple locations in memory. (This is called scatter-gather I/O.)
+==========================================================================
+struct bio{
+	sector_t bi_sector;               /* associated sector on disk */
+	struct bio* bi_next;              /* list of requests */
+	struct block_device* b_bdev;      /* associated block device */
+	unsigned long bi_flags;           /* status and command flags */
+	unsigned long bi_rw;              /* read or write? */
+	unsigned short bi_vcnt;           /* number of bio_vecs */
+	unsigned short bi_idx;            /* current index in bi_io_vec */
+	unsigned short bi_phys_segments;  /* number of segments */
+	unsigned int bi_size;             /* I/O count */
+	unsigned int bi_seg_front_size;   /* size of first segment */
+	unsigned int bi_seg_back_size;    /* size of last segment */
+	unsigned int bi_max_vecs;         /* maximum bio vecs possible */
+	unsigned int bi_comp_cpu;         /* completion CPU */
+	atomic_t bi_cnt;                  /* usage count */
+	struct bio_vec* bi_io_vec;        /* bio vec array */
+	bi_end_io_t* bi_end_io;           /* I/O completion method */
+	void* bi_private;                 /* owner-private method */
+	bio_destructor_t* bi_destructor;  /* destructor method */
+	struct bio_vec bi_inline_vecs[0]; /* inline bio vectors */
+};
+==========================================================================
+ ------      ------    ------    ------
+| page |    | page |  | page |  | page | (page structures involved in block I/O operation)
+ ------      ------    ------    ------
+     ^         ^         ^         ^
+     |         |         |         |
+ ---------------------------------------
+| bio_vec | bio_vec | bio_vec | bio_vec | ... (list of bio_vec structures, bio_vcnt in all.)
+ ---------------------------------------
+^               ^
+|              /  bi_idx
+| bio_io_vec  /
+|            /
+             |
+ -----------/
+|struct bio |
+ -----------
+ Relationship between struct bio, struct bio_vec, and struct page.
+
+ • I/O vectors:
+ The primary purpose of a bio structure is to represent an in-flight block I/O operation. The bio_io_vec field points to an array of bio_vec structures. Each bio_vec is treated as a vector of the form <page, offset, len>, which describes a specific segment: the physical page on which it lies, the location of the block as an offset into the page, and the length of the block starting from the given offset. (The full array of these vectors describes the entire buffer.)
+==========================================================================	
+struct bio_vec{
+	struct page* bv_page;      /* pointer to the physical page on which this buffer resides */
+	unsigned int bv_len;       /* the length in bytes of this buffer */
+	unsigned int bv_offset;    /* the byte offset within the page where the buffer resides */
+};
+==========================================================================
+In summary, each block I/O request is represented by a bio structure. The bi_idx field is used to point to the current bio_vec in the list, which helps the block I/O layer keep track of partially completed block I/O operations.
+The bio structure maintains a use count in the bi_cnt field. 
+void bio_get(struct bio* bio);       /* increases bi_cnt */
+void bio_put(struct bio* bio);       /* decreases bi_cnt, and when it reaches 0, destroy the bio structure */
+
+• The old V.S. the new:
+The difference between buffer head and the new bio structure is important. The bio structure represents an I/O operation, which may include one or more pages in memory. The buffer_head structure represents a single buffer, which describes a single block on the disk. Because buffer_head is tied to a single disk block in a single page, buffer heads results in the unnecessary dividing of requests into block-size chunks, only to later reassemble them. Because bio structure is lightweight, it can describe discontiguous blocks and doesn't unnecessarily split I/O operations.
+Switching from struct buffer_head to struct bio provides the following benefits, also:
+i)   The bio structure can easily represent high memory, because struct bio deals with only physical pages and no direct pointers.
+ii)  The bio structure can represent both normal page I/O and direct I/O (I/O operations that do not go through page cache).
+iii) The bio structure makes it easy to perform scatter-gather block I/O operations, with the data involved in the operation originating from multiple physical pages.
+Currently, the buffer_head is still needed to contain information about buffers, while the bio structure describes in-flight I/O.
+
+4. Request queues:
+Block devices must maintain request queues to store their pending block I/O requests. The request queue is represented by struct request_queue, which is defined in <linux/blkdev.h>. Each item in the queue's request list is a single request, of the type struct request, also defined in <linux/blkdev.h>. Each request can be composed of more than one bio structure.
+
+5. I/O schedulers:
 
