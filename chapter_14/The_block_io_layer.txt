@@ -102,4 +102,58 @@ Currently, the buffer_head is still needed to contain information about buffers,
 Block devices must maintain request queues to store their pending block I/O requests. The request queue is represented by struct request_queue, which is defined in <linux/blkdev.h>. Each item in the queue's request list is a single request, of the type struct request, also defined in <linux/blkdev.h>. Each request can be composed of more than one bio structure.
 
 5. I/O schedulers:
+The kernel doesn't issue block I/O requests to the disk in the order they are received or as soon as they are received. Instead, it performs operations called "merging and sorting" to greatly improve the performance of the system as a whole.
+• The job of an I/O scheduler:
+An I/O scheduler works by managing a block device's request queue. An I/O scheduler, very openly, is unfair to some requests at the expense of improving the overall performance of the system.
 
+i)   The Linus Elevator:
+It was the default I/O scheduler in 2.4 kernel. In summary, when a request is added to the queue, 4 operations are possible. In order, they are:
+• If a request to an adjacent on-disk sector is in the queue, the existing request and the new request merge into a single request.
+• If a request in the queue is sufficiently old, the new request is inserted at the tail of the queue to prevent starvation of the other, older, requests.
+• If a suitable location sector-wise is in the queue, the new request is inserted there. This keeps the queue sorted by physical location on disk.
+• Finally, if no such suitable insertation point exists, the request is inserted at the tail of the queue.
+The linus elevator is implemented in block/elevator.c.
+
+ii)  The deadline I/O scheduler:
+Heavy disk I/O operations to one area of the disk can indefinitely starve request operations to another part of the disk. The worse is if writes starves reads. Write operations could be entirely asynchronous with respect to the submitting application. Read operations are quite different. Normally, when an application submits a read request, the application blocks until the request is fulfilled. That is, read requests occur synchronously with respect to the submitting application. Compounding the problem, read requests tend to be dependent on each other. The deadline I/O scheduler implements several features to ensure that request starvation in general, and read starvation in specific, is minimized.
+Note that reducing request starvation comes at a cost to global throughput. The deadline I/O scheduler, works harder to limit starvation while still providing good global throughput.
+
+In deadline I/O scheduler, each request is associated with an expiration time. By default, the expiration time is 500ms for read requests and 5s for write requests. The deadline I/O scheduler operates similarly to the Linus Elevator in that it maintains a request queue sorted by physical location on disk. This queue is called sorted queue. When a new request is submitted to the sorted queue, the deadline I/O scheduler performs merging and sorting like the Linus Elevator. The deadline I/O scheduler also, however, inserts the request into a second queue that depends on the type of request. Read requests are sorted into a special read FIFO queue, and write requests are sorted into a special write FIFO queue. The normal queue is sorted by on-disk sector, the read FIFO and write FIFO queue is sorted by the time, kept FIFO. 
+Under normal operation, the deadline I/O scheduler pulls requests from the head of the sorted queue into the dispatch queue, the dispatch queue is then fed to the disk drive. If the request at the head of either the write FIFO queue or the read FIFO queue expires, the deadline I/O scheduler then begins servicing requests from the FIFO queue. In this manner, the deadline I/O scheduler attempts to ensure that no request is outstanding longer than its expiration time.
+And because read requests are given a substantially smaller expiration value than write requests, the deadline I/O scheduler also works to ensure that write requests do not starve read requests. This preference toward read requests provides minimized read latency. The source code is in block/deadline-iosched.c.
+ -----------------
+| read FIFO queue | 
+ -----------------  ------
+                          \
+ ------------------             ----------------
+| write FIFO queue | ------>   | dispatch queue |  -----> DISK
+ ------------------        ^    ----------------
+                         --/
+  --------------        /
+ | sorted queue |  -----
+  --------------
+The 3 queues of the deadline I/O scheduler.
+
+iii) The Anticipatory I/O scheduler:
+Although the deadline I/O scheduler does a great job in minimizing read latency, it does so at the expense of global throughput. The anticipatory I/O scheduler aims to continue to provide excellent read latency, but also provide excellent global throughput. The major change is the addition of an anticipation heuristic.
+When a read request is issued, it is handled as usual, within its expiration time. After the request is submitted, however, the anticipatory I/O scheduler doesn't immediately seek back and return to handling other requests. Instead, it does absolutely nothing for a few milliseconds (the default value is six milliseconds.) In those milliseconds, there is a good chance that the application will submit another read request. After the waiting period elapses, the anticipatory I/O scheduler seeks back to where it left off and continues handling the previous requests.
+As more and more reads are issued to the same area of disk, many more seeks are prevented. And of course if no activity occurs within the waiting period, the anticipatory I/O scheduler loses and a few milliseconds are wasted. The anticipatory I/O scheduler keeps track of per-process statistics pertaining to block I/O habits in hopes of correctly anticipating the actions of applications. 
+The source code is in block/as-iosched.c. It is ideal for servers, although it performs poorly on certain uncommon but critical workloads involving seek-happy databases.
+
+iv)  The complete fair queueing I/O scheduler:
+The CFQ I/O scheduler assigns incoming I/O requests to specific queues based on the procerss originating the I/O request. Within each queue, requests are coalesced with adjacent requests and insertion sorted. The difference with CFQ I/O scheduler is that there's one queue for each process submitting I/O. CFQ then services the queue round robin, plucking a configurable number of requests from each queue before continuing on to the next.
+This provides fairness at a per-process level, assuring that each process receives a fair slice of the disk's bandwidth. The intended workload is multimedia, but in practice the CFQ I/O scheduler performs well in many scenarios.
+The source code lives in block/cfq-iosched.c. It is recommended for desktop workloads, although it performs reasonably well in nearly all workloads without any pathological corner cases. It is now the default I/O scheduler in linux.
+
+v)   The noop I/O scheduler:
+The noop scheduler does not perform sorting or any other form of seek-prevention work. (In turn, it has no need to implement anything akin to minimize request latency in the previous schedulers.) But the noop I/O scheduler does perform merging as its only chore. Other than this operation, noop I/O scheduler truly is a noop, merely maintaining the request queue in near-FIFO order.
+This scheduler is intended for block devices that are truly random-access, such as flash memory cards. If a block device has little or no overhead associated with "seeking", there's no need for insertion sorting of incoming requests, and the noop I/O scheduler is the ideal candidate.
+The source code is in block/noop-iosched.c. It is intended only for real random-access devices.
+
+6. I/O scheduler selection:
+By default, block devices use the CFQ I/O scheduler. This can be overriden via the boot-time option "elevator=foo" on the kernel command line, where foo is valid and enabled I/O scheduler:
+Parameter           I/O scheduler:
+as                  Anticipatory
+cfq                 Complete Fair Queueing
+deadline            Deadline
+noop                Noop
