@@ -151,7 +151,7 @@ The slab layer divides different objects into groups called caches, each of whic
 The caches are then divided into slabs, the slabs are composed of one or more physically contiguous pages. Each slab contains some number of objects, which are the data structures being cached. Each slab is in one of three states: full, partial, or empty.
 
 Each cache is represented by a kmem_cache structure. This structure contains three lists: slabs_full, slabs_partial, and slabs_empty - stored inside a kmem_list3 structure, which is defined in mm/slab.c. These lists contain all the slabs associated with the cache. A slab descriptor, struct slab, represents each slab.
-The slab allocator creates new slabs by interfacing with the low-lebel kernel page allocator __get_free_pages(), in kmem_getpages(). Memory is then freed by kmem_freepages(), which calls free_pages() on the given cache's pages. Of course the point of slab layer is to refrain from allocating and freeing pages; in turn, the slab layer invokes the page allocation function only when there doesn't exist any partial or empty slabs in a given cache.
+The slab allocator creates new slabs by interfacing with the low-level kernel page allocator __get_free_pages(), in kmem_getpages(). Memory is then freed by kmem_freepages(), which calls free_pages() on the given cache's pages. Of course the point of slab layer is to refrain from allocating and freeing pages; in turn, the slab layer invokes the page allocation function only when there doesn't exist any partial or empty slabs in a given cache.
 
 • Slab allocator interface:
 A new cache is created via:
