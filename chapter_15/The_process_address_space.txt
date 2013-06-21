@@ -1,0 +1,91 @@
+• Chapter 12 looks at how the kernel manages physical memory; in addition to managing its own memory, the kernel also has to manage the manage of user-space processes. This memory is called the process address space. An individual process's view of memory is as if it alone has full access to the system's physical memory. More important, the address space of a single process can be much larger than physical memory.
+
+2. Address spaces:
+The process address space consists of the virtual memory addressable by a process and the addresses within the virtual memory that the process is allowed to use. Each process is given a flat 32- or 64-bit address space. (The term flat denotes that the address space exists in a single range. Some operating systems provide a segmented address space, with addresses existing not in a single linear range, but instead in multiple segments. Modern virtual memory operating systems generally have a flat memory mode and not a segmented one.) 
+On 32-bit architecture, although a process can address up to 4GB of memory, it doesn't have permission to access all of it. The intervals of memory addresses that the process has permission to access are called "memory areas". The process can dynamically add and remove memory areas to its address space. 
+Memory areas do not overlap, a valid address in the process address space exists in exactly one area.
+
+3. The memory descriptor:
+The kernel represents a process address space using a data structure called memory descriptor, of the type struct mm_struct, which is defined in <linux/mm_types.h>:
+============================================================
+struct mm_struct{
+	struct vm_area_struct* mmap;                    /* list of memory areas */
+	struct rb_root;                                 /* root node of the red-black tree of VMAs */
+	struct vm_area_struct* mmap_cache;              /* last used memory area */
+	unsigned long free_area_cache;                  /* 1st address space hole */
+	pgd_t* pgd;                                     /* page global directory */
+	atomic_t mm_users;                              /* see below */
+	atomic_t mm_count;                              /* see below */
+	int map_count;                                  /* number of memory areas */
+	struct rw_semaphore mmap_sem;                   /* rw-semaphore to protect memory descriptor */
+	spinlock_t page_table_lock;                     /* spinlock to protect page table (PGD) */
+	struct list_head mmlist;                        /* all mm_structs are in the doubly linked list */
+	unsigned long start_code;                       /* start address of code */
+	unsigned long end_code;
+	unsigned long start_data;
+	unsigned long end_data;
+	unsigned long start_brk;
+	unsigned long brk;
+	unsigned long start_stack;
+	unsigned long arg_start;
+	unsigned long arg_end;
+	unsigned long env_start;
+	unsigned long env_end;                          /* end address of environment argument */
+	unsigned long rss;                              /* page allocated? */
+	unsigned long total_vm;                         /* total number of pages */
+	unsigned long locked_vm;                        /* number of locked pages */
+	unsigned long saved_auxv[AT_VECTOR_SIZE];       /* ? */
+	cpumask_t cpu_vm_mask;                          /* lazy TLB switch mask */
+	mm_context_t context;                           /* arch-specific data */
+	unsigned long flags;                            /* status flags */
+	int core_waiters;                               /* ? */
+	struct core_state* core_state;                  /* core dump support */
+	spinlock_t ioctx_lock;                          /* AIO I/O list lock */
+	struct hlist_head ioctx_list;                   /* AIO I/O list */
+};
+============================================================
+The mm_users field is the number of processes using this address space. The mm_count is the primary reference count for the mm_struct, which is always 1 as long as mm_users > 0. Only when mm_users reaches 0 (when all threads using an address space exit) is mm_count decremented, it means no remaining references to this mm_struct and it is freed.
+mmap and mm_rb fields are different data structures that contain the same thing: all the memory areas in this address space. mmap stores them in a linked list, while mm_rb stores in a red-black tree. The kernel isn't duplicating the mm_struct structures, just the containing objects. Overlaying a linked list onto a tree, and using both to access the same set of data, is called threaded tree.
+All of the mm_struct structures are strung together in a doubly linked list via mmlist field. The initial element in the list is the init_mm memory descriptor. The list is protected from concurrent access via the mmlist_lock, which is defined in kernel/fork.c
+
+• Allocating a memory descriptor:
+The memory descriptor associated with a given task is stored in the mm field of the task's task_struct structure. The copy_mm() function copies a parent's memory descriptor to its child during fork(). The mm_struct is allocated from the mm_cachep slab cache via allocate_mm() macro in kernel/fork.c. In the case that CLONE_VM is specified in clone(), allocate_mm() is not called, and the process's mm field is set to the memory descriptor of its parent's.
+
+• Destroying a memory descriptor:
+When the process associated with a specific address space exits, the exit_mm() is invoked, which is defined in kernel/exit.c. It calls mmput(), which decrements the memory descriptor's mm_users by 1. If mm_users reaches 0, mmdrop() is called to decrement the mm_count field. If that counter is finally 0, the free_mm() macro is invoked to return the mm_struct to the mm_cachep slab cache via kmem_cache_free(). 
+
+• The mm_struct and kernel threads:
+Kernel threads do not have a process address and therefore do not have an associated memory descriptor. Thus, the mm field of a kernel thread's process descriptor is NULL. (This is the definition of kernel thread: process that doesn't have user context.) This lack of an address space is fine because kernel threads do not ever access any user-space memory. Because kernel threads do not have any pages in user-space, they do not deserve their own memory descriptor and page tables. However, kernel threads need some of the data such as the page tables to access kernel memory. So kernel threads use the memory descriptor of whatever task ran previously.
+Whenever a process is scheduled, the process address space referenced by the process's mm field is loaded. The active_mm field in the process descriptor is then updated to refer to the new address space. When kernel threads are scheduled, the kernel notices that its mm field is NULL, so keeps the previous process's address space loaded. The kernel then updates the active_mm field of the kernel thread's process descriptor to refer to the previous process's memory descriptor. The kernel can then use the previous process's page tables as needed, because kernel threads do not access user-space memory, they make use of only the information in the address space pertaining to kernel memory, which is the same for all processes.
+
+4. Virtual memory areas:
+struct vm_area_struct, defined in <linux/mm_types.h>, represents memory areas. In the linux kernel, memory areas are often called virtual memory areas (VMA). The vm_area_struct structure describes a single memory area over a contiguous interval in a given address space.
+=======================================================
+struct vm_area_struct{
+	struct mm_struct* vm_mm;                       /* associated mm_struct */
+	unsigned long vm_start;                        /* VMA start, inclusive */
+	unsigned long vm_end;                          /* VMA end, exclusive */
+	struct vm_area_struct* vm_next;                /* list of VMAs */
+	pgprot_t vm_page_prot;                         /* access permission */
+	unsigned long vm_flags;                        /* flags */
+	struct rb_node vm_rb;                          /* VMA's node in the tree */
+	union{                                         /* links to address_space->i_mmap of i_mmap_nonlinear */
+		struct{
+			struct list_head list;
+			void* parent;
+			struct vm_area_struct* head;
+		}vm_set;
+		struct prio_tree_node prio_tree_node;
+	}shared;
+	struct list_head anon_vma_node;                /* anon_vma entry? */
+	struct anon_vma* anon_vma;                     /* anonymous VMA object? */
+	struct vm_operations_struct* vm_ops;           /* associated ops */
+	unsigned long vm_pgoff;                        /* offset within file */
+	struct file* vm_file;                          /* mapped file, if any */
+	void* vm_private_data;                         /* private data */
+};
+=======================================================
+Intervals in different memory areas in the same address space cannot overlap.
+• vm_flags:
+The vm_flags field contains bit flags, defined in <linux/mm.h>. Unlike permissions associated with a specific physical page, the VMA flags specify behavior for the kernel, not the hardware. Furthermore, vm_flags contains information that relates to each page in the memory area, or the memory area as a whole, and not specific individual page.
+
