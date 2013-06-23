@@ -1,0 +1,87 @@
+1. Approaches to caching:
+The page cache consists of physical pages in RAM, the contents of which correspond to physical blocks on a disk. The size of page cache is dynamic, it can grow to consume any free memory and shrink to relieve memory pressure.
+
+• Write caching:
+Caches can be implemented in three strategies:
+i)   A write operation against a piece of data stored in the cache would be written directly to disk, invalidating the cached data and requiring it to be read from disk again on any subsequent read. 
+ii)  A write operation would automatically update both the in memory cache and the on-disk file. This method is called "write-through", it has the benefit of keeping the cache coherent - synchronized and valid for the backing store without needing to invalidate it.
+iii) The 3rd strategy, employed by the linux, is called "write-back". The backing store is not immediately or directly updated; instead, the written-to pages in the page cache are marked as dirty and are added to a dirty list. Periodically, pages in the dirty list are written back to disk in a process called writeback. A write back is generally considered superior to a write through strategy, because by deferring the writes to disk, they can be coalesced and performed in bulk at a later time.
+
+• Cache eviction:
+LRU: the two-list strategy:
+Linux implements a modified version of LRU, called the two-list strategy. Instead of maintaining one list, the LRU list, linux keeps two lists: the active list and the inactive list. Pages in the active list are considered "hot" and are not available for eviction. Pages on the inactive list are available for cache eviction. Pages are placed on active list only when they are accessed while already in the inactive list. If the active list becomes much larger than the inactive list, items from the active list's head are moved back to the inactive list, making them available for eviction. Both lists are maintained in a pseudo-LRU manner: items are added to the tail and removed from the head, as with a queue. This two-list approach is also known as LRU/2, it can be generalized to n-lists, called LRU/n.
+
+2. The linux page cache:
+• The address_space object:
+The Linux page cache aims to cache any page-based object, which includes many forms of files and memory mapping. Linux page cache uses a new object to manage entries in the cache and page I/O operations, which is address_space object. Think of address_space as the physical analogue to the vm_area_struct. For example, a single file may be represented by 10 vm_area_struct structures (say if five processes each mmap() it twice), the file has only one address_space structure - just as the file may have many virtual addresses but exists only once in physical memory. (Actually address_space is misnamed, a better name may be page_cache_entity or physical_pages_of_a_file.)
+The struct address_space is defined in <linux/fs.h>:
+===================================================================================
+struct address_space{
+	struct inode* host;                           /* owning inode */
+	struct radix_tree_root page_tree;             /* radix tree of all pages */
+	spinlock_t tree_lock;                         /* page tree lock */
+	unsigned int i_mmap_writable;                 /* count of VM_SHARED mappings */
+	struct prio_tree_root i_mmap;                 /* tree of private and shared mappings */
+	struct list_head i_mmap_nonlinear;            /* list of VM_NONLINEAR mappings */
+	spinlock_t i_mmap_lock;                       /* i_mmap lock, protects tree, count, list */
+	atomic_t truncate_count;                      /* cover race condition with truncate */
+	unsigned long nrpages;                        /* total number of pages */
+	pgoff_t writeback_index;                      /* writeback start offset */
+	struct address_space_operations* a_ops;       /* operations */
+	unsigned long flags;                          /* gfp mask and error flags */
+	struct backing_dev_info* backing_dev_info;    /* read-ahead information */
+	spinlock_t private_lock;                      /* private lock */
+	struct list_head private_list;                /* private list */
+	struct address_space* assoc_mapping;          /* associated buffers */
+};
+===================================================================================
+The i_mmap field is a priority tree of all shared and private mappings in this address space. (A priority search tree is a mix of heap and radix trees.) While a cached file is associated with one address_space structure, it can have many vm_area_struct structures - a one-to-many mapping from the physical pages to many virtual pages. The i_mmap field allows the kernel to efficiently find the mapping associated with this cached file.
+The host field points to the associated inode, if it is NULL then the associated object is not an inode, for example, if the address_space is associated with the swapper.
+The a_ops field points to the address_space operations table, like the VFS way. See p328 ~ p329 for more details.
+
+• Radix tree:
+The page cache is searched via the address_space object plus an offset value. Each address_space has a unique radix tree stored as page_tree. A radix tree is a type of binary tree. The core radix tree code is available in lib/radix-tree.c. Users need to include <linux/radix-tree.h>.
+
+• The old page hash table:
+Prior to 2.6 kernel, the page cache was not searched via the radix tree. Instead, a global hash was maintained over all the pages in the system. The global hash had 4 primary problems:
+i)   A single global lock protected the hash. So performance suffered as a result.
+ii)  The hash was larger than necessary because it contained all the pages in the page cache, whereas only pages pertaining to the current file were relevant.
+iii) Performance when the hash lookup failed was slower than desired.
+iv)  The hash consumed more memory than other possible solutions.
+The introduction of radix tree based page cache solved these issues.
+
+• The buffer cache:
+A buffer is the in-memory representation of a single physical disk block. The page cache also reduces disk access during block I/O operations by both caching disk blocks and buffering block I/O operations until late. This caching is often referred to as the buffer cache, although as implemented it is not a seperate cache but is part of the page cache.
+
+3. The flusher threads:
+Dirty pages writeback occurs in three situations:
+• When free memory shrinks below a specified threshold.
+• When dirty data grows older than a specific threshold.
+• When a user process invokes the sync() and fsync() syscalls.
+In 2.6 kernel, a gang of kernel threads - the flusher threads, performs all three jobs. (The term "gang" is commonly used in computer science to denote a group of things that can operate in parallel.)
+i)  The first task: the memory level at which this process begins is configured by the dirty_background_ratio sysctl. When free memory drops below this threshold, the kernel invokes the wakeup_flusher_threads() call to wake up one or more flusher threads and have them run bdi_writeback_all() function to begin writeback of dirty pages, until the amount of free memory is above dirty_background_ratio or the specified number of pages has been written out.
+ii) A flusher thread periodically wakes up and writes out old dirty pages. On system boot, a timer is initialized to wake up a flusher thread and have it run the wb_writeback() function, which writes back all data that was modified longer than dirty_expire_interval milliseconds ago. The timer is then reinitialized to expire again in dirty_writeback_interval milliseconds.
+The flusher code is in mm/page-writeback.c and mm/backing-dev.c, and the writeback mechanism lives in fs/fs-writeback.c.
+These configuration values can be set either in /proc/sys/vm/ or via stsctl:
+=============================================================
+Variable                              Description
+dirty_background_ratio                As a percentage of total memory, the number of pages at which the flusher threads begin writeback of dirty data
+dirty_expire_interval                 In milliseconds, how old data must be written out the next time a flusher thread wakes to perform periodic writeback
+dirty_ratio                           As a percentage of total memory, the number of pages a process generates before it begins writeback of dirty data.
+dirty_writeback_interval              In milliseconds, how often a flusher thread should wake up to write data back out to disk.
+laptop_mode                           A boolean value controlling laptop mode.
+=============================================================
+
+• Laptop mode:
+Laptop mode is a special page writeback strategy intended to optimize battery life by minimizing hard disk activity and enabling hard drives to remain spin down as long as possible. Enabling the laptop mode, in addition to performing writeback of dirty pages when they grow too old, the flusher threads also piggyback off any other physical disk I/O, flushing all dirty buffers to disk. (In this manner, page writeback takes advantage that the disk was just spun up, ensuring that it will not cause the disk to spin up later.)
+
+• History: bdflush, kupdated, and pdflush
+Prior to 2.6 kernel, the job of the flusher threads was met by two other kernel threads: bdflush and kupdated.
+Two main differences distinguish bdflush and the current flusher threads. i) There was only one bdflush daemon, whereas the number of flusher threads is a function of the number of disk spindles. ii) bdflush is buffer-based, it wrote back dirty buffers. The flusher threads are page-based, they wrote back whole pages.
+The kupdated thread was introduced to periodically write back dirty pages.
+In the 2.6 kernel, bdflush and kupdated gave way to the pdflush threads (page dirty flush). The pdflush threads performed similar to the flusher threads today. The main difference is that the number of pdflush threads is dynamic, by default between two and eight. The pdflush threads are not associated with any specific disk; instead, they are global to all disks in the system. This allows a simple implementation, the downside is that pdflush can easily trip up on congested disks. Moving to per-spindle flushing enables the I/O to perform synchronously, simplifying the congestion logic and improving performance. 
+The flusher threads replaced the pdflush threads in the 2.6.32 kernel.
+
+• Avoiding congestion with multiple threads:
+One of the major flaws in the bdflush was that bdflush consisted of only one thread. This led to possible congestion during heavy page writeback where the single bdflush thread would block on a single congested device queue(the list of I/O requests waiting to submit to disk). The 2.6 kernel solves this problem by enabling multiple flusher threads to exist. Each thread individually flushes dirty pages to disk, allowing different flusher threads to concentrate on different device queues. The pdflush prevents a single busy disk from starving other disks, but what if each pdflush thread were to get hung up writing to the same, congested queue? To mitigate this effect, the pdflush threads employ congestion avoidance: they actively try to write back pages whose queues are not congested.
+This approach worked fairly well but the congestion avoidance was not perfect. Aside from pdflush, no other part of the I/O system employs congestion avoidance. Since 2.6.32 kernel, the threads are associated with a block device, so each thread grabs data from its per-block device dirty list and writes it back to its disk. Writeback is thus synchronous and the threads, because there is one per disk, do not need to employ complicated congestion avoidance.
