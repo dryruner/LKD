@@ -12,4 +12,182 @@ Abbreviated as cdevs, character devices are generally not addressable, providing
 • Netwoek devices:
 Network devices provide access to a network via a physical adapter and a specific protocol. Breaking Unix's "everything is a file" design principle, network devices are not accessed via a device node but with a special interface called the socket API.
 
+Not all device drivers represent physical devices. Some device drivers are virtual, providing access to kernel functionality. We call these pseudo devices. For example, the kernel random number generator (accessed at /dev/random), the null device (accessible at /dev/null), the zero device (accessible at /dev/zero), the full device (/dev/full), the memory device (/dev/mem).
+
+2. Modules:
+The Linux kernel is modular, supporting the dynamic insertion and removal of code from itself at runtime. Related subroutines, data, and entry and exit points are grouped together in a single binary image, a loadable kernel object, called a module.
+• A hello_world:
+===============================================================
+/* hello.c - The Hello, world! kernel module */
+#include <linux/init.h>
+#include <linux/module.h>
+#include <linux/kernel.h>
+
+/* the init function called when the module is loaded. */
+static int hello_init(void)
+{
+	printk(KERN_ALERT "I bear a charmed life.\n");
+	return 0;
+}
+
+/* the exit function called when the module is removed. */
+static void hello_exit(void)
+{
+	printk(KERN_ALERT "Out, out, brief candle!\n");
+}
+
+module_init(hello_init);
+module_exit(hello_exit);
+
+MODULE_LICANSE("GPL");
+MODULE_AUTHOR("Shakespeare");
+MODULE_DESCRIPTION("A hello world module");
+===============================================================
+• All init functions must have the form: 
+int my_init(void);
+Because init functions are typically not directly invoked by external code, so it often can be marked as static. If this file were compiled statically into the kernel image, the init function would be stored in the kernel image and run on kernel boot.
+• Exit functions must have the form:
+void my_exit(void);
+As with the init function, you probably want to mark it static. If the file were compiled into the static kernel image, the exit function would NOT be included, and it would never be invoked because if it were not a module, the code could never be removed from memory.
+• The MODULE_LICENSE() macro specifies the copyright license for this file. Loading a non-GPL module into memory results in the tainted flag being set in the kernel. Second, non-GPL modules cannot invoke GPL-only symbols.
+
+• Building modules:
+(I)  Living in the source tree:
+Ideally your module is an official part of Linux and thus lives in the kernel source tree.
+i)   For example, let's assume you have a character device and want to store it in drivers/char/. Drivers with only one or two source files might simply stick their source in this directory. Drivers with multiple source files or other accompanying data might create a new subdirectory. For example, you want to create a fishing/ subdirectory inside drivers/char/.
+ii)  Next, you need to add a line to the Makefile in drivers/char/. Add a line:
+obj-m += fishing/
+Most likely, if your driver's complication is contingent on a specific configuration option, you would instead add the line:
+obj-$(CONFIG_FISHING_POLE) += fishing/
+iii) Finally, inside drivers/char/fishing/, you would add a new Makefile with the following line: 
+obj-m += fishing.o
+The build system now descends into fishing/ and builds the module named fishing.ko from fishing.c. (Note that you write the extension .o but the module is compiled as .ko). As before, most likely your fishing pole driver's compilation is conditional on a configuration option, so you would instead do the following:
+obj-$(CONFIG_FISHING_POLE) += fishing.o
+If the fishing pole driver gets complicated that it must span multiple files, then the Makefile could be written as follows:
+===================================================
+obj-$(CONFIG_FISHING_POLE) += fishing.o
+fishing-objs  :=  fishing-main.o  fishing-line.o
+===================================================
+Now fishing-main.c and fishing-line.c will be compiled and linked into fishing.ko when CONFIG_FISHING_POLE is set.
+Finally, you might need to pass additional compile flags solely for your file. To do so, simply add a line in the Makefile:
+EXTRA_CFLAGS += -DTITANIUM_POLE
+
+• If you opted to place your source files in drivers/char/ and not create a new subdirectory, you would merely place the above (that in the drivers/char/fishing/Makefile) into drivers/char/Makefile.
+
+(II) Living externally:
+If you prefer to maintain and build your module outside the kernel source tree, simply create a Makefile in your own source directory with:
+obj-m := fishing.o
+This line compiles fishing.c into fishing.ko. Or if it spans multiple files:
+obj-m := fishing.o
+fishing-objs  :=  fishing-main.o  fishing-line.o
+This compiles fishing-main.c and fishing-line.c into fishing.ko.
+Because the module lives outside the kernel tree, you need to instruct make to find the kernel source files and base Makefile:
+	make -C "kernel_source_location" SUBDIRS=$PWD modules
+"kernel_source_location" is the location of your configured kernel source tree.
+
+• Installing modules:
+Compiled modules are installed into lib/modules/version/kernel/ where each directory under kernel/ corresponds to the module's location in the kernel source tree. For example, with a kernel version of 2.6.34, then the compiled fishing pole module would live at lib/modules/2.6.34/kernel/drivers/char/fishing.ko.
+The following build command is used to install compiled modules into the correct location:
+	make modules_install
+This needs to be run as root.
+
+• Generating module dependencies:
+For example, if module foo depends on module bar, when you load foo module, the module loader automatically loads the bar module. This dependency information must be generated. To build the module dependency information , simply run as the root:
+	depmod
+To perform a quick update, rebuilding only the information for mudules newer than the dependency information, run as root:
+	depmod -A
+The module dependency information is stored in the file: lib/modules/version/modules.dep.
+
+• Loading modules:
+i)  The simplest way to load a module is via insmod. It doesn't perform any dependency resolution or advanced error checking. Usage:
+	insmod module.ko
+To remove a module, use the rmmod utility. As root, run the following, where module is the name of an already-loaded module:
+	rmmod module
+ii) The utility modprobe provides dependency resolution, error checking and reporting, configurable behavior, and more advanced features; its use is highly encouraged. To insert a module into the kernel via modprobe, run as root:
+	modprobe module [module parameters]
+The modprobe utility not only loads the requested module, but also any modules on which it depends.
+To remove modules from the kernel, run as root:
+	modprobe -r modules
+Here, modules specifies one or more modules to remove, it also removes any modules on which the given module depends, if they are unused.
+
+• Managing configuration options:
+Thanks to the new kbuild system in the 2.6 kernel, adding new configuration options is easy. All you have to do is to add an entry to the Kconfig file responsible for the application branch of the kernel source tree. For example, if the fishing pole driver lives in drivers/char/, just use drivers/char/Kconfig. If you create a new subdirectory and want a new Kconfig file to live there, you need to source it from an existing Kconfig. In the existing Kconfig, add a line:
+	source "drivers/char/fishing/Kconfig"
+The new Kconfig file is easy to fill in, for example:
+==========================================
+config FISHING_POLE
+	tristate "Fish Master 3000 support"
+	default n
+	help
+		If you say Y.....
+		.....
+		
+		If unsure, say N.
+==========================================
+The first line defines what configuration option this entry represents. Note that the prefix "CONFIG_" is assumed and not written.
+The second line states that this option is a tristate, Y(build into kernel)/N(not build at all)/M(build as a module).
+The third line specifies the default for this option.
+The help directive signifies that the rest indented is the help text for this entry.
+There are other options:
+* The "depends" directive specifies options that must be set before this option can be set. If the dependencies are not met, the option is disabled. For example, if you add :
+	depends on FISH_TANK
+in the Kconfig entry, the device driver couldn't be enabled(Y/M) until the CONFIG_FISH_TANK option is enabled.
+* The "select" directive is like depends, except that it forces the given option if our option is selected. (This option shouldn't be used as frequently as depends because it automatically enables other configuration options). For example:
+	select BAIT
+This enables CONFIG_BAIT whenever CONFIG_FISHING_POLE is enabled.
+* For both depends and select directive, you can use "&&" to request multiple options. You can also specify that an option not be enabled by the prefixing the option with an exclamation("!") mark. For example:
+	depends on EXAMPLE_DRIVERS && !NO_FISHING_ALLOWED
+This line specifies that the driver depends on CONFIG_EXAMPLE_DRIVERS being set and CONFIG_NO_FISHING_ALLOWED being unset.
+* The tristate and bool options can be followed by the if directive, which marks the entire option conditional on another configuration option. If the condition is not met, the configuration option is not only disabled, but also doesn't appear in the configuration utility. For example:
+	bool "Deep Sea Mode" if OCEAN
+This line instructs the configuration system to display an option only if CONFIG_OCEAN is set.
+The if directive can also follow the default directive, enforcing the default only if the condition is met.
+* The configuration system exports several meta-options to help make configuration easier.
+CONFIG_EMBEDDED: enabled only if the users specified that they want to see options designed for disabling key features (presumably to save precious memory on embedded systems).
+CONFIG_BROKEN_ON_SMP: used to specify a driver that is not SMP-safe. Normally this flag is unset, and new drivers should use this flag.
+CONFIG_DEBUG_KERNEL: enables the selection of debugging-related options.
+CONFIG_EXPERIMENTAL: used to flag options that are experimental or beta quality.
+
+• Module parameters:
+Linux kernel provides a simple framework, enabling drivers to declare parameters that the user can specify either on boot or module load and then have these parameter exposed in your driver as global variables. These module parameters also show up in sysfs.
+* Defining a module parameter is done via the macro module_param():
+	module_param(name, type, perm);
+The name is both the parameter exposed to the user and the variable holding the parameter inside your module.
+The type holds the parameter's data type, which is one of byte, short, ushort, int, uint, long, ulong, charp, bool, or invbool. charp is a pointer to a char; invbool is a boolean whose value is inverted from the what the user specifies. The byte type is stored in a char, a bool type is stored in variables of type int.
+The perm specifies the permissions of the corresponding file in sysfs. The permissions can be specified in the usual octal format, like 0644, or by ORing together the usual SIfoo flags, like S_IRUSR | S_IWUSR. 
+The macro doesn't declare the inside variable for you, you must do that BEFORE using the macro. Usage:
+	static int allow_live_bait = 1;
+	module_param(allow_live_bait, bool, 0664);
+It's also possible to have the internal variable named differently than the external parameter:
+	module_param_named(name, variable, type, perm);
+The name is the externally viewable parameter name, and variable is the name of the internal global variable.
+Normally you would use a type of charp to define a module parameter that takes a string. The kernel copies the string provided by the user into memory and points your variable to the string. Like:
+	static char* name;
+	module_param(name, charp, 0);  // if perm == 0, then it disables a sysfs entry.
+It's also possible to have the kernel copy the string directly into a character array that you supply:
+	module_param_string(name, string, len, perm);
+The name is the external parameter name, string is the internal variable name, len is the size of the buffer named by string, perm is the sysfs permission (or 0 to disable a sysfs altogether). For example:
+	static char species[BUF_LEN];
+	module_param_string(specifies, species, BUF_LEN, 0);
+You can accept a comma-serarated list of parameters stored in a C array:
+	module_param_array(name, type, nump, perm);
+The name is again the external parameter and internal variable name, type is the data type, and perm is the sysfs permissions. nump - is a pointer to an integer in which the kernel stores the number of entries stored into the array. Note that the array pointed to by name must be statically allocated. (The kernel determines the array's size at compile-time to ensure that it doesn't overrun). For example:
+	static int fish[MAX_FISH];
+	static int nr_fish;
+	module_param_array(fish, int, &nr_fish, 0444);
+You can also name the internal array with a different name with the external paramater:
+	module_param_array_named(name, array, type, nump, perm);
+Finally, you can document your parameters by using MODULE_PARM_DESC():
+	static unsigned short size = 1;
+	module_param(size, ushort, 0644);
+	MODULE_PARM_DESC(size, "The size in inches of the fishing pole.");
+All these macros require the inclusion of  <linux/module.h>.
+
+• Exported symbols:
+When modules are loaded, they are dynamically linked into the kernel. As with user-space, dynamically linked binaries can call only external functions that are explicitly exported for use. This is handled via special directives called EXPORT_SYMBOL() and EXPORT_SYMBOL_GPL().
+Exported functions are available for use by modules, functions not exported cannot be invoked from modules. (Exported symbols must be nonstatic.) The set of exported kernel symbols are known as the exported kernel interfaces.
+Some developers want their interfaces accessible to only GPL-compliant modules. The kernel linker enforces this restriction through use of the MODULE_LICENSE(). If you want the function accessible to only modules that labeled as GPL-licensed, use instead:
+	EXPORT_SYMBOL_GPL(func_name);
+
+3. The device model:
 
