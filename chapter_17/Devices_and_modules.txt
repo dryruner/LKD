@@ -190,4 +190,87 @@ Some developers want their interfaces accessible to only GPL-compliant modules. 
 	EXPORT_SYMBOL_GPL(func_name);
 
 3. The device model:
+The device model provides a single mechanism for representing devices and describing their topology in the system. The initial motivation for the device model was to provide an accurate device tree to faciliate power management.
+i)   Kobjects:
+At the heart of the device model is the kobject, which is defined in <linux/kobject.h>, as struct kobject. The kobject is similar to the Object class in java, it provides basic facilities like refcnt, name, parent pointer, etc.
+=============================================================
+struct kobject{
+	const char* name;        /* name of this kobject */
+	struct list_head entry;  /* */
+	struct kobject* parent;  /* points to this kobject's parent, this forms sysfs - a user-space filesystem representation of the kobject object hierarchy inside the kernel */
+	struct kset* kset;
+	struct kobj_type* ktype; 
+	struct sysfs_dirent* sd; /* points to sysfs_dirent, which represents this kobject in sysfs */
+	struct kref kref;
+	unsigned int state_initializedi : 1;
+	unsigned int state_in_sysfs : 1;
+	unsigned int state_add_uevent_sent : 1;
+	unsigned int state_remove_uevent_sent : 1;
+	unsigned int uevent_suppress : 1;
+};
+=============================================================
+Kobjects are usually embedded in other strutures and are generally not interesting on their own. When kobjects are embedded inside other structures, the structures receive the standardized functions that a kobject provides.
+
+ii)  Ktypes:
+kobjects are associated with a specific type, called a ktype, defined in <linux/kobject.h>:
+=============================================================
+struct kobj_type{
+	void (*release)(struct kobject*);   /* points to a destructor called when a kobject's refcnt reaches 0. Used to free any memory associated with this kobject and other cleaning up */
+	const struct sysfs_ops* sysfs_ops;  /* points to sysfs_ops structure, describes the behavior of sysfs files on read and write. Discussed in more detail in sysfs section */
+	struct attribute** default_attrs;   /* points to an array of attribute structures. These structures define the default attributes associated with this kobject. If this kobject is exported to sysfs, the attributes are exported as files. Note that the last entry in the array must be NULL. */
+};
+=============================================================
+
+iii) Ksets:
+Ksets are collections of kobjects. ksets work as the base container for a set of kobjects, collecting related kobjects, such as "all block devices". 
+Ksets group related kernel objects together, whereas ktypes enable kernel objects (functionally related or not) to share common operations. The distinction is kept to allow kobjects of identical ktypes to be grouped into different ksets. That is, there're only a handful of ktypes, but many ksets in the kernel.
+Defined in <linux/kobject.h>:
+=============================================================
+struct kset{
+	struct list_head list;               /* list is a linked list of all kobjects in this kset */
+	spinlock_t list_lock;                /* spin lock protects this entry in the list */
+	struct kobject kobj;
+	struct kset_uevent_ops* uevent_ops;  /* points to a structure that describes the hotplug behavior of kobjects in this kset. uevent, short for user events, is a mechanism for communicating with user-space information about the hotplugging and hot removal of devices from a system. */
+};
+=============================================================
+
+* Kobjects are typically embedded in other data structures, giving those containing structures the features of the kobject. Ktypes is a set of shared operations. Ksets aggregate together related kobjects. In sysfs, kobjects are the individual directories in the filesystem; related directories, perhaps all subdirectories of a given directory might be in the same kset.
+
+• Managing and manipulating kobjects:
+The first step in using a kobject is declaring and initializing it. 
+void kobject_init(struct kobject* kobj, struct kobj_type* ktype;
+The 1st parameter is the kobject to be initialized. Before calling this function, the kobject must be zeroed, if not, a simple call to memset() does the trick:
+=================================================
+struct kobject* kobj;
+kobj = kmalloc(sizeof(*kobj), GFP_KERNEL);
+if(!kobj)
+	return -ENOMEM;
+memset(kobj, 0, sizeof(*kobj));
+kobj->kset = my_kset;
+kobject_init(kobj, my_ktype);
+=================================================
+The above steps is handled automatically by kobject_create():
+struct kobject* kobject_create(void);
+
+• Reference counts:
+After initialization the kobject's refcnt is 1. Declared in <linux/kobject.h>:
+struct kobject* kobject_get(struct kobject* kobj);
+Increase the kobject's refcnt by 1, return NULL on failure.
+void kobject_put(struct kobject* kobj);
+Decrease the kobject's refcnt by 1, and if its refcnt becomes 0, the release function pointed at by the ktype associated with the kobject is invoked.
+
+* Krefs:
+Internally the kobject reference count is provided by the kref structure, which is declared in <linux/kref.h>:
+===========================
+struct kref{
+	atomic_t refcount;
+};
+==========================
+A structure is used simply to provide type checking.
+void kref_init(struct kref* kref);
+void kref_get(struct kref* kref);
+int kref_put(struct kref* kref, void (*release)(struct kref* kref));
+All the above functions are defined in lib/kref.c, and declared in <linux/kref.h>.
+
+4. Sysfs:
 
