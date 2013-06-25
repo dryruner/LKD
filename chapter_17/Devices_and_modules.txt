@@ -272,5 +272,88 @@ void kref_get(struct kref* kref);
 int kref_put(struct kref* kref, void (*release)(struct kref* kref));
 All the above functions are defined in lib/kref.c, and declared in <linux/kref.h>.
 
-4. Sysfs:
 
+4. Sysfs:
+The sysfs filesystem is an in-memory virtual filesystem that provides a view of the kobject hierarchy. It enables users to view the device topology of their system as a simple filesystem. Using attributes, kobjects can export files that enable kernel variables to be read from and optionally written to.
+Today every system with a 2.6 kernel has sysfs, and most systems mount it at /sys/.
+The root of sysfs contain at least 10 directories: block/, bus/, class/, dev/, devices/, firmware/, fs/, kernel/, module/, and power/.
+block/:     contains one directory for each of the registered block devices. Each of those directories, in turn, contains any partitions on the block device.
+bus/:       provides a view of system buses.
+class/:     contains a view of the devices on the system organized by high-level function. 
+dev/:       A view of registered device nodes.
+devices/:   A view of the device topology of the system. It maps directly to the hierarchy of device structures inside the kernel.
+firmware/:  contains a system-specific tree of low-level subsystems such as ACPI, EFI, etc.
+fs/:        contains a view of registered filesystems.
+kernel/:    contains kernel configuration options and status information.
+modules/:   contains a view of the system's loaded modules.
+power/:     contains systemwide power management data.
+
+The most important directory is devices/, the directory structure is the actual device topology of the system. Much of the data in other directories is simply alternative organizations of the data in the devices/ directory.
+Seeing the interconnection between the high-level concepts in class/ V.S. the low-level physical devices in devices/ and the actual drivers in bus/ is informative.
+
+• Adding and removing kobjects from sysfs:
+Initialized kobjects are not automatically exported to sysfs. To represent a kobject to sysfs, you use kobject_add():
+	int kobject_add(struct kobject* kobj, struct kobject* parent, const char* fmt, ...);
+The given kobject's location in sysfs depends on kobject's location in hierarchy. 
+i)   If the kobject's parent pointer is set, the kobject maps to a subdirectory in sysfs inside its parent. 
+ii)  If the parent pointer is not set, the kobject maps to a subdirectory inside kset->kobj. 
+iii) if neither the parent nor the kset fields are set in the given kobject, the kobject is assumed to have no parent, and thus mapping to a root-level directory in sysfs.
+Regardless, the name of the directory representing the kobject in sysfs is given by fmt, which accepts a printf-style format string.
+
+The helper function kobject_create_and_add() combines the work of kobject_create() and kobject_add():
+	struct kobject* kobject_create_and_add(const char* name, struct kobjct* parent);
+Note that kobject_create_and_add() receives the name of the kobject's directory as a normal string, while kobject_add() uses a printf-style string.
+• Removing a kobject's sysfs representation is done via kobject_del():
+	void kobject_del(struct kobject* kobj);
+All of these functions are defined in lib/kobject.c, and declared in <linux/kobject.h>.
+
+• Adding files to sysfs:
+i)   Default attributes:
+A default set of files in sysfs is provided via the ktype field in kobjects and ksets. The kobj_type structure contains a member, default_attrs, that is is an array of attribute structures. Attributes maps kernel data to files in sysfs. The attribute structure is defined in <linux/sysfs.h>:
+=============================================================
+struct attribute{
+	const char* name;        /* attribute's name, which will be the filename of the resulting file in sysfs */
+	struct module* owner;    /* owning module, if any */
+	mode_t mode;             /* permission for the file in sysfs, all files and directories in sysfs are owned by uid 0 and gid 0. */
+};
+=============================================================
+The sysfs_ops describes how to use the attributes. Defined in <linux/sysfs.h>:
+=============================================================
+struct sysfs_ops{
+	/* method invoked on read of a sysfs file */
+	ssize_t (*show)(struct kobject* kobj, struct attribute* attr, char* buffer);
+	/* method invoked on write of a sysfs file */
+	ssize_t (*store)(struct kobject* kobj, struct attribute* attr, const char* buffer, size_t size);
+};
+=============================================================
+The show() method is invoked when the sysfs entry is read from user-space. It must copy the value of the attribute given by attr into the buffer provided by buffer. The buffer is PAGE_SIZE bytes in length. It returns the size in bytes of data actually written to buffer on success, otherwise, a negative error code on failure.
+The store() method is invoked on write. It must read the size bytes from buffer into the variable represented by the attribute attr. The size of buffer is always PAGE_SIZE or smaller. It returns the size in bytes of data read from buffer on success.
+
+• Creating new attributes:
+	int sysfs_create_file(struct kobject* kobj, const struct attribute* attr);
+Before it's invoked, the given attribute should ve filled out. It returns zero on success. Note that the sysfs_ops specified in the kobject's ktype is invoked to handle this new attribute.
+It is also possible to create symbolic links:
+	int sysfs_create_link(struct kobject* kobj, struct kobject* target, char* name);
+This function creates a link named name in the directory mapped from kobj to the directory mapped from target.
+
+• Destroying attributes:
+	void sysfs_remove_file(struct kobject* kobj, const struct attribute* attr);
+Upon the call return, the given attribute no longer appears in the given kobject's directory.
+Symbolic links created with sysfs_create_link() could be removed with:
+	void sysfs_remove_link(struct kobject* kobj, const char* name);
+All of the above four funcitons are declared in <linux/kobject.h>. sysfs_create_file() and sysfs_remove_file() are defined in fs/sysfs/file.c. The sysfs_create_link() and sysfs_remove_link() are define in fs/sysfs/symlink.c.
+
+• Sysfs conventions:
+i)  Sysfs attributes should export one value per file. Values should be text-based and map to simple C types. In situations where the one-value-per-file rule results in an ineffiecient representation of data, it is acceptable to place multiple values of the same type in one file. Think of sysfs attributes as mapping to individual kernel vaiables, and keep in mind ease of manipulation from user-space, particularly from the shell.
+ii) Remember that sysfs provides a kernel-to-user service and is thus a sort of user-space API. User-space programs could rely on the existence, location, value, and behavior of sysfs directory and files.
+
+• The kernel events layer:
+The kernel events layer implements a kernel-to-user notification system on top of kobjects. After the release of 2.6.0, it became clear that a mechanism for pushing events out of the kernel and up into user-space was needed, particularly for desktop systems. The kernel event layer models events as signals emitting from objects - specifically, kobjects. 
+Each event is given a verb or action string representing the signal. The strings are terms such as modified or unmounted that describe what happened.
+Finally, each event has an optional payload. Rather than pass an arbitrary string to user-space that provides the payload, the kernel event layer represents payload as sysfs attributes.
+* Internally, the kernel events go from kernel-space out to user-space via netlink, which is a high-speed multicast socket that transmits networking information. Using netlink means that obtaining kernel events from user-space is as simple as blocking on a socket. The intention is for user-space to implement a system daemon that listens on the socket, processes any read events, and transmits the events up the system stack.
+* To send events out to user-space from your kernel code, use:
+	int kobject_uevent(struct kobject* kobj, enum kobject_action action);
+The 1st parameter specifies the kobject emitting this signal. The actual kernel event contains the sysfs path to which this kobject contains.
+The 2nd parameter specifies the action or verb describing this signal. The actual kernel event contains a string that maps to the provided enum kobject_action value. The enumerations are defined in <linux/kobject.h> and have the form KOBJ_foo. Current values include KOBJ_MOVE, KOBJ_ONLINE, KOBJ_OFFLINE, KOBJ_ADD, KOBJ_REMOVE, and KOBJ_CHANGE. These values map to the strings "move", "online", "offline", "add", "remove", and "change", respectively. Adding new action values is acceptable, so long as existing values are insufficient.
+These related functions are defined in lib/kobject_uevent.c and declared in <linux/kobject.h>.
