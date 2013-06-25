@@ -1,0 +1,148 @@
+1. Debugging by printing:
+The kernel print function printk() behaves almost identically to the C library printf(), but it also does have some special features.
+• Robustness:
+The printk() function is callable from just about ANYWHERE in the kernel at ANY time. It can be called from interrupt or process context. It can be called while ANY lock is held. It can be called simultaneously on multiple processors, yet it does not require the caller to hold a lock.
+The fact that printk() is always there and always work is very important.
+But printk() is unusable in the kernel boot process, prior to the console initialization. But here's still some hope. The solution is a printk() variant that can output to the console early in the boot process. early_printk() is the same as printk(), but it could work earlier. But this is not a portable solution, because not all supported architectures have such a method implemented. (x86 implements it.)
+
+• Loglevels:
+The major difference between printk() and printf() is that the former specifies a loglevel. They're defined in <linux/kernel.h>, they expand to a string such as "<4>", "<7>" and so forth. The kernel then decides which messages to print on the console based on this specified loglevel and the current console loglevel - "console_loglevel".
+Loglevel             Description
+KERN_EMERG           An emergency condition; the system is probably dead. <0>(most important)
+KERN_ALERT           A problem that requires immediate attention.
+KERN_CRIT            A critical condition.
+KERN_ERR             An error.
+KERN_WARNING         A warning.
+KERN_NOTICE          A normal, but perhaps noteworthy condition.
+KERN_INFO            An informational message.
+KERN_DEBUG           A debug message. <7>(least important)
+If you don't specify a loglevel, it defaults to "DEFAULT_MESSAGE_LOGLEVEL", which is currently KERN_WARNING.
+
+• The log buffer:
+Kernel messages are stored in a circular buffer of size "LOG_BUF_LEN". This size is configurable at compile time via the "CONFIG_LOG_BUF_SHIFT" option. The default for a uniprocessor machine is 16KB. If message queue is at this maximum and another call to printk() is made, the new message overwrites the oldest one. Using a circular buffer has multiple advantages. It is easy to simultaneously write to and read from a circular buffer, even interrupt context can easily use printk(). And it makes log maintenance easy because there's no need to consume uncontrollably memory. The lone disadvantage of a circular buffer is the possibility of losing messages.
+
+• syslogd and klogd:
+On a standard Linux system, the user-space klogd daemon retrieves the kernel messages from the log buffer and feeds them into the system log file via the syslogd daemon. To read the log, the klogd program can either read the /proc/kmsg file or call the syslog() syscall. By default, it uses the /proc approach. klogd blocks until there are new kernel messages to read. By default, it sends the messages to the syslogd daemon.
+The syslogd appends all the messages it receives to a file, which is by default /var/log/messages. It is configurable at via /etc/syslog.conf.
+The console loglevel could be changed via the -c flag.
+
+2. Oops:
+An opps is the usual way a kernel communicates to the user that something bad happened. It prints an error message to the console, dumping the contents of the registers, and provide a back trace.
+Often, after an oops, the kernel is in an inconsistent state, the kernel tries to gracefully back out of its current context and try to resume control of the system. But in many cases, this is not possible. i) If an oops occurred in interrupt context, the kernel cannot continue and it panics (a panic results in an instant halt of the system). ii) If the oops occurred in the idle task (pid:0) or the init task (pid:1), the result is also a panic because the kernel cannot continue without these important processes. iii) If the oops occurred in any other process, the kernel kills the process and tries to continue executing.
+
+• ksymoops:
+The previous oops is said to be decoded because the memory addresses are translated into the functions they represent. If a encoded oops is given, the addresses in the back trace need to be converted into symbolic names. This is done via the "ksymoops" command in conjunction with the System.map generated during kernel compile. If you use modules, you also need some module information. You can invoke like:
+	ksymoops saved_oops.txt
+
+• kallsyms:
+The 2.5 kernel introduced the kallsyms feature, which is enabled via "CONFIG_KALLSYMS" option. This option stores in the kernel the symbolic name of function addresses mapped into the kernel images so that the kernel can print decoded back traces. Consequently, decoding oops no longer requires System.map or ksymoops. The downside is that the size of the kernel increases. The configuration option "CONFIG_KALLSYMS_ALL" additionally stores the symbolic name of all the symbols not only functions.
+The "CONFIG_KALLSYMS_EXTRA_PASS" option causes the kernel build process to make a second pass over the kernel object code. This is useful when debugging kallsyms itself.
+
+3. Kernel debugging options:
+Multiple configure options you can set during compile to aid in debugging and testing kernel code. These options are in the Kernel Hacking menu of the Kernel Configuration Editor. They all depend on CONFIG_DEBUG_KERNEL.
+Thanks to kernel preemption, the kernel has a central atomicity counter. The kernel can be set such that if a task sleeps while atomic, or even does something that might sleep, the kernel prints a warning and provides a back trace. 
+Potential bugs that are detectable include calling schedule() while holding a lock, issuing a blocking memory allocation while holding a spinlock, or sleeping while holding a refcnt to per-CPU data.
+The following options make the best use of this feature:
+CONFIG_PREEMPT=y
+CONFIG_DEBUG_KERNEL=y
+CONFIG_KALLSYMS=y
+CONFIG_DEBUG_SPINLOCK_SLEEP=y
+
+4. Asserting bugs and dumping information:
+Two of the most common are BUG() and BUG_ON(). When called, they cause an oops, which results in a stack trace and an error message dumped to the kernel. You normally use these routines as assertions, to flag situations that shouldn't happen:
+=================================================
+if(bad_thing)  (equivalent to)
+	BUG();        ------->      BUG_ON(bad_thing)
+=================================================
+Note that the assertion inside BUG_ON() shouldn't have any side effect, because some developers have discussed the idea of having an option to compile BUG_ON() away, saving space in embedded kernels.
+BUILD_BUG_ON() performs the same purpose, but at compile time. If the provided statement evaluates to true at compile time, the compilation aborts with an error.
+* dump_stack():
+Sometimes you just want a simple stack trace issued on the console to help you in debugging. In those cases, dump_stack() is used. It simply dumps the contents of the registers and a function back trace to the console.
+
+5. Magic sysrq key:
+Enabled via the "CONFIG_MAGIC_SYSRQ" option, the sysrq(system request) key is a standard key on most keyboards. When this option is enabled, special combinations of keys enable you to communicate with the kernel regardless of what else it is doing. This enables you to perform some useful tasks in the face of a dying system.
+In addition to the configure option, there is a sysctl to toggle this feature on and off. To turn it on:
+	echo 1 > /proc/sys/kernel/sysrq
+If the machine is badly locked, it might not respond to any magic sysrq combinations, or it might fail to complete a given command.
+Key Command       Description
+Sysrq + b         Reboots the machine
+Sysrq + e         Sends a SIGTERM to all processes except init
+Sysrq + h         Display sysrq help on the console
+Sysrq + i         Sends a SIGKILL to all processes except init
+Sysrq + k         Secures access key: kills all programs on this console
+Sysrq + l         Sends a SIGKILL to all processes including init
+Sysrq + m         Dumps memory information to console
+Sysrq + o         Shuts down the machine
+Sysrq + p         Dumps registers to console
+Sysrq + r         Turns off keyboard raw mode
+Sysrq + s         Syncs all mounted filesystems to disk
+Sysrq + t         Dumps task information to console
+Sysrq + u         Unmounts all mounted filesystems
+The actual implementation is in drivers/char/sysrq.c. See Documentation/sysrq.txt in the kernel source tree for more details. The magic sysrq key is a vital tool for aiding in debugging or saving a dying system (Sysrq + s  ->  Sysrq + u  ->  Sysrq + b: order to reboot a dying machine).
+
+6. The saga of a kernel debugger:
+• gdb:
+You could use gdb to glimpse inside a running kernel:
+	gdb vmlinux /proc/kcore
+The vmlinux file is the uncompressed kernel image stored in the root of the build directory, not the compressed zImage or bzImage.
+The optional /proc/kcore parameter acts as a core file to let gdb actually peek into the memory of the running kernel. Need to be root to read it.
+Then you can use gdb to read a value or disassemble a function. Note that you cannot modify kernel data, you cannot single-step through kernel code or set breakpoints.
+
+• kgdb:
+kgdb is a patch that enables gdb to fully debug the kernel remotely or over a serial line. It require 2 computers, one runs a kernel patched with kgdb, another debugs the former over the serial line using gdb. This time, the entire feature of gdb is accessible.
+
+7. Poking and probing the system:
+• Using UID as a conditional:
+If the code you're developing is process-related, sometimes you can develop alternative implementations without breaking the existing code. For example:
+	if(current->uid != 7777)
+	{
+		/* old algorithm */
+	}
+	else
+	{
+		/* new algorithm */
+	}
+
+• Using statistics:
+For example, say you want to look at the occurences of foo and bar. Declare two global variables:
+unsigned long foo_stat = 0;
+unsigned long bar_stat = 0;
+Export the data however you feel it. For example you can create a file in /proc with the values or write a syscall. Alternatively, simply read them via a debugger.
+Note that this approach is not particularly SMP-safe. Ideally, you would use atomic operations. But for a trivial one-time debugging, it is still OK.
+
+• Rate and occurrence limiting your debugging:
+If debugging some functions that are called many times in a second, the printk() debugging method may cause the system overwhelmed with debugging output and quickly grows unusable. Two simple tricks exist to prevent this problem:
+* Rate limiting
+It is useful when you want to watch the progression of an event, but the event occurs rather often. You could print your debug message only every few seconds:
+=================================================
+static unsigned kong orev_jiffy = jiffies;
+
+if(time_after(jiffies, prev_jiffy + 2 * HZ))
+{
+	prev_jiffy = jiffies;
+	printk(KERN_ERR "blah blah blah\n");
+}
+=================================================
+If you are only using printk(), you can use a special function to rate limit your printk() calls:
+=================================================
+if(error && printk_ratelimit())
+	printk(KERN_DEBUG "error=%d\n", error);
+=================================================
+The printk_ratelimit() returns zero if rate limiting is in effect and nonzero if it reaches the printing point. by default, the function allows only one message every 5 seconds but allows an inital burst of up to 10 messages before that cap is enforced. These parameters are tunable via the "printk_ratelimit" and "printk_ratelimit_burst" sysctl.
+
+8. Binary searching to find the culprit change:
+Using binary search methods to pinpoint the kernel version that first introduced the bug. You need a reliable reproducible problem, and a known-good-version kernel.
+* Binary searching with git:
+Git performs the binary search at the revision level, pinpointing the specific commit that introduced the bug. How to do it:
+i)   Begin a binary search: $ git bisect start;
+ii)  Provide the earliest broken revision:$ git bisect bad <revision>;  (If the latest version of the kernel is your known-earliest offender, you just use:$ git bisect bad;).
+iii) Provide the latest working revision: $ git bisect good <revision>;
+Git then automatically CHECKOUTS the Linux source tree bisecting the provided bad and good revisions. 
+iv)  You then compile, run, and test that revision. 
+	• If it works, you run: $ git bisect good;
+	• If it doesn't work, run: $ git bisect bad;
+On each command, git again bisects the tree on a per-revision basis, returning the next bisection as needed. Repeat the process until there are no more bisections possible. Git then prints the offending revision number.
+* If you think you know the source of the bug, for example it is in x86-specific boot code, you can instruct git to only bisect among commits touching a specified list of directories, like:
+	$ git bisect start - arch/x86;
+
+9. When all else fails: the community
