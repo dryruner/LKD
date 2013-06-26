@@ -1,0 +1,65 @@
+• Portable code is trade for optimal code.
+
+1. Word size and data types:
+A word is the amount of data that a machine can process at one time. When someone talks about the "n-bits" machine, they are generally talking about the machine's word size. For example, Intel i7 is a 64-bit chip, it means its word size is 8 Bytes.
+The size of a processor's general-purpose registers (GPRs) is equal to its word size. Typically, at least in the architectures Linux support, the virtual memory address space is equal to the word size, although the physical address space is sometimes less. Consequently, the size of a pointer equal to the word size. Additionally, the size of C type long is equal to the word size. 
+Each supported architecture under Linux defines "BITS_PER_LONG" in <asm/types.h> to the length of the C long type.
+
+* The C standard explicitly leaves the size of the standard variable types up to implementations. There doesn't need to be a relation between the types in user-space and kernel-space! The sparc64 architecture provides a 32-bit user-space (therefore pointers and long and int types are all 32-bit); in kernel space, however, sparc64 has a 32-bit int type and 64-bit long and pointers. But a char is always 1 Byte.
+
+• Opaque types:
+Like pid_t, atomic_t, etc.
+i)   Do not assume the size of the type. It might be 32-bit on some systems and 64-bit on others. Moreover, kernel developers are free to change its size over time.
+ii)  Do not convert the type back to a standard C type.
+
+2. Explicitly sized types:
+s8, u8, s16, u16, s32, u32, s64, u64. Kernel defines these explicitly sized data types in <asm/types.h>, which is included by <linux/types.h>.
+Note that these types can be used only inside the kernel, in code that is never revealed to user-space. The kernel also defines user-visible variants of these types, which are simply the same type prefixed by two underscores. For example, the unsigned 32-bit integer type that is safe to export to user-space is __u32. You can use either u32 or __u32 inside kernel, but if the type is user-visible, you must use the underscored version.
+
+3. Signedness of chars:
+On most architectures, char is signed by default; on a few other architectures, like ARM, char is unsigned by default! So for example:
+	char i = -1;
+On ARM, it stores 255, which may be contradicted to what the programmer means.
+So if you use char in your code, assume it can be either signed or unsigned. If you need it to be explicitly one type, declare it explicitly!
+
+4. Data alignment:
+• Natural alignment: 
+A variable is naturally aligned if it exists as a memory address that is a multiple of its size (in Bytes). 
+
+• Alignment of non-standard types:
+Non-standard C types have the following alignment rules:
+i)   The alignment of an array is the alignment of the base type.
+ii)  The alignment of a union is the alignment of the largest included type.
+iii) The alignment of a structure is such that an array of the architecture will have each element of the array properly aligned; and have to provide padding as needed.
+
+The ANSI C specifies that the compiler must never change the order of members in a structure.
+The "-Wpadded" flag instructs fcc to generate a warning whenever padding is added to a structure.
+
+5. Byte order:
+Byte ordering is the order of bytes within a word.
+ ---------------
+| MSB ..... LSB |
+ ---------------
+Little-endian: LSB stores in the low address, MSB stores in the high address.
+Big-endian: LSB stores in the high address, MSB stores in the low address.
+• Each supported architecture in Linux defines one of __BIG_ENDIAN or __LITTLE_ENDIAN in <asm/byteorder.h> in correspondence to the machine's byte order. This header file also includes a family of macros from include/linux/byteorder/, which help with conversions to and from the various orderings:
+	u32 __cpu_to_be32(u32);     /* convert cpu's byte order to big-endian */
+	u32 __cpu_to_le32(u32);     /* convert cpu's byte order to little-endian */
+	u32 __be32_to_cpu(u32);     /* convert big-endian to cpu's byte order */
+	u32 __le32_to_cpu(u32);     /* convert little-endian to cpu's byte order */
+It returns the converted value, in case the orders are the same, the macro does nothing.
+
+6. Time:
+Always use HZ, which is defined in <asm/param.h>.
+
+7. Page size:
+Always use PAGE_SIZE, and other page-related macros defined in <asm/param.h>
+
+8. Processor ordering:
+If you depend on data ordering in your code, ensure that even the weakest ordered processor commits your load and stores in the right order by using appropriate barriers, such as wmb() and rmb().
+
+9. SMP, kernel preemption, and high memory:
+You need to follow the rules:
+• Always assume your code will run on an SMP system and use appropriate locking.
+• Always assume your code will run with kernel preemption enabled and use appropriate locking and kernel preemption statements.
+• Always assume your code will run on a system with high memory(memory not permanently mapped) and use kmap() as needed.
