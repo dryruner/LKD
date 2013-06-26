@@ -17,3 +17,4 @@
 * Chapter 17: Devices and Modules
 * Chapter 18: Debugging
 * Chapter 19: Portability
+* Chapter 20: Patches, Hacking, and the Community
