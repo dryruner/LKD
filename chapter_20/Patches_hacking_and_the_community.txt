@@ -1,0 +1,56 @@
+1. The community:
+Send plain text to majordomo@vger.kernel.org:
+	subscribe linux-kernel <email-addr>
+More information at http://vger.kernel.org and a FAQ available at http://www.tux.org/lkml/.
+
+2. Linux coding style:
+• Eight-character tabs and at most 80 characters per line.
+• 'case' keyword should be indented to the same level as the parent 'switch' statement.
+• Spaces should be put most keywords, like:
+	if (foo)
+	while (foo)
+	for (i = 0; i < NR_CPUS; i++)
+	switch (foo)
+• Functions, macros, and keywords that look like functions (sizeof, typeof, alignof ...) have no space between them and the parenthesis.
+• braces:
+	if () {
+		......
+		......
+	} else {
+		......
+		......
+	}
+	unsigned long func(void)	
+	{
+		......
+	}
+• Naming:
+Local variable should be clear and simple, do not use Hungarian notation. However, global variable and functions should have descriptive names, in lowercase and delimited by an underscore as needed.
+• Structure initializers:
+Kernel code uses the new C99 labeled identifier format, like:
+	struct foo my_foo = {
+		.a = INITIAL_A,
+		.b = INITIAL_B,
+	};
+If a field is not set, it is set to its default value (e.x. pointers set to NULL, integers set to 0, floats set to 0.0).
+
+• indent utility and scripts/Lindent:
+Use the indent utility and the Lindent script to automatically beatufy the code in the specified style. See Lindent and man indent for more details.
+
+3. Patches:
+i)  Generating patches using diff:
+	diff -urN old_file new_file > my_patch;    // like diff -urN linux-x.y.z/ linux/ > my_patch; (linux-x.y.z/, linux/, and my_patch are in the same directory.)
+-u: unified diff format should be used; without this the patch is ugly and not readable by humans.
+-r: recursive diff
+-N: the new file in the modified tree should be included in the patch.
+
+To apply the patch in the above format, in the root of the source tree (in linux/), do:
+	patch -p1 < ../my_patch;  // -pN, N should see the directory architecture of the patch file
+-p1: instructs diff to strip the first directory from the patch.
+* diffstat: generates a histogram of a patch's changes (line additions and removals). It's often useful to include its output in .patch. Because patch program ignores all lines until a diff is detected, so you can include a short description at the top of the patch.
+
+ii) Generating patches with git:
+	git format-patch origin;
+This generates patches for all commits in your repository and not in the original tree. To just generate patches for only the last N commits, use:
+	git format-patch -N;
+See ProGit chapter 5 for more details.
