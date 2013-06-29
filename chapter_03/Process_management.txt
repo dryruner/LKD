@@ -9,9 +9,33 @@ Kernel maintains a list of processes in a circular doubly linked list. struct ta
 The task_struct structure is allocated via the slab allocator. Prior to the 2.6 kernel series, task_struct is stored at the end of the kernel stack of each process. (This allows architecture with few registers like x86 to fetch task_struct via stack pointer directly). But with the task_struct dynamically allocated via slab allocator, a new structure (struct thread_info) is at the bottom of the kernel stack. thread_info is defined in <asm/thread_info.h>. struct thread_info has one entry (pointer to the task's actual task_struct).
 
 3. Storing the process descriptor:
-linux provides a macro current to fetch the pointer to the current running process's task_struct, this macro must be independently implemented by each architecture. 
+linux provides a macro "current" to fetch the pointer to the current running process's task_struct, this macro must be independently implemented by each architecture. 
 
 4. Process state:
+
+                        Scheduler dispatches task to run;
+                        schedule() calls context_switch().
+Task forks                    -----------------
+   |                         /                 \                           ---->  Task is terminated
+   |                        /                   \                          |
+   |	     --------------                      -> --------------         | do_exit()
+   |        | TASK_RUNNING |                      | TASK_RUNNING |         |
+    ------> |(ready but not|                      |              | --------
+            |   running)   |                      |   (running)  |
+             -------------- <-                     --------------
+                     ^        \                  /           |
+                     |         \                /            |
+                     |          ----------------             | 
+                     |        (Task is preempted)            |
+                     |                                       |
+(Event occurs and    |                                       | (Task sleeps on wait queue for a specific event)
+ task is woken up    |                                       |
+ and placed back on  |       ---------------------           |
+ the run queue)      |      |  TASK_INTERRUTIBLE  |          |
+                     ------ |          or         |  <--------
+                            | TASK_UNINTERRUTIBLE |
+                             ---------------------
+
 • TASK_RUNNING: the process is runnable, it's either currently running or on a runnable queue waiting to run. (This is the only possible state for a process executing in user-space; it can also apply to a process in kernel-space that is actively running.)
 • TASK_INTERRUPTIBLE: the process is sleeping, waiting for some condition to exist. When this condition exists, the kernel sets the process's state to TASK_RUNNING. The process also awakes prematurely and becomes runnable if receives a signal.
 • TASK_UNINTERRUPTIBLE: this state is identical to TASK_INTERRUPTIBLE except that it doesn't wake up and become runnable if it receives a signal.

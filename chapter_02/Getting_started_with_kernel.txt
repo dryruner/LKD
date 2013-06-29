@@ -30,8 +30,8 @@ How to install is architecture and boot loader dependent. On x86 system using gr
 4. A beast of a different nature:
 • No libc or standard headers:
 Because the full C library is too large and too inefficient for the kernel. But many of the useful libc functions are implemented inside the kernel.
-header files like <linux/inotify.h> are in include/linux/inotify.h; <asm/XXX> is in the arch/<architecture>/include/asm/ 
-keenel doesn't have access to printf, but it provides printk, which is very similar to printf. One notable difference is that printk enables a priority flag:  printk(KERN_ERR "this is an error!\n"); note here's no comma!
+Header files like <linux/inotify.h> are in include/linux/inotify.h; <asm/XXX> is in the arch/<architecture>/include/asm/ 
+Kernel doesn't have access to printf, but it provides printk, which is very similar to printf. One notable difference is that printk enables a priority flag:  printk(KERN_ERR "this is an error!\n"); note here's no comma!
 
 • Inline functions:
 static inline void wolf(); // inline functions are usually put in header files.
@@ -39,7 +39,7 @@ static inline void wolf(); // inline functions are usually put in header files.
 • Inline assembly:
 
 • Branch annotation:
-Kernel wraps the directive in easy-to-use macros likely() and unlikely():
+Kernel wraps the directive in easy-to-use MACRO likely() and unlikely():
 	if(unlikely(error)){
 		...
 	}

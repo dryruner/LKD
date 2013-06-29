@@ -6,9 +6,9 @@ Each processor is doing exactly one of the following three things at any given m
 • In kernel-space, in process context, executing on behalf of a specific process.
 • In kernel-space, in interrupt context, not associated with any process, handling an interrupt.
 
-3. Monilithic kernel VS micro kernel: (the third type: exokernel is still in research systems)
-Monilithic kernels are implemented entirely as a single process running in a single address space. Most unix systems are monolithic in design.
-Mocro kernels: the functionality is broken down into separate processes (usually called servers). Micro kernels communicate via message passing, IPC mechanism is built into the system.
+3. Monolithic kernel VS micro kernel: (the third type: exokernel is still in research systems)
+Monolithic kernels are implemented entirely as a single process running in a single address space. Most unix systems are monolithic in design.
+Micro kernels: the functionality is broken down into separate processes (usually called servers). Micro kernels communicate via message passing, IPC mechanism is built into the system.
 
 Linux is a monolithic kernel, but it supports modular design, the capability of preempt itself, support kernel threads, and the capability to dynamically load separate binaries into kernel image. Everything runs in kernel mode, with direct function invocation.
 (i.e. Linux is modular, threaded, and schedulable.)
