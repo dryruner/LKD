@@ -40,10 +40,10 @@ Task forks                    -----------------
 • TASK_INTERRUPTIBLE: the process is sleeping, waiting for some condition to exist. When this condition exists, the kernel sets the process's state to TASK_RUNNING. The process also awakes prematurely and becomes runnable if receives a signal.
 • TASK_UNINTERRUPTIBLE: this state is identical to TASK_INTERRUPTIBLE except that it doesn't wake up and become runnable if it receives a signal.
 • __TASK_TRACED: the process is being traced by another process, such as a debugger, via ptrace.
-• __TASK_STOPPED: process execution has stopped; the task is not running nor is it eligible to run. This happens if the task receives the SIGSTOP, SIGTSTP, SIGTTIN, SIGTTOU signal, or if it receives any signal while it is being debugged.
+• __TASK_STOPPED: process execution has stopped; the task is neither running nor is it eligible to run. This happens if the task receives the SIGSTOP, SIGTSTP, SIGTTIN, SIGTTOU signal, or if it receives any signal while it is being debugged.
 
 5. Process context:
-System calls and exception handlers are well-defined interfaces into the kernel. A process can begin executing in kernel space only through one of these interfaces, all access to the kernel is through these interfaces. And the current macro is only valid when the kernel is in the process context.
+System calls and exception handlers are well-defined interfaces into the kernel. A process can begin executing in kernel space only through one of these interfaces, all access to the kernel is through these interfaces. And the "current" macro is valid only when the kernel is in the process context.
 
 6. The process family tree:
 It's expensive to iterate over every task in a system with many processes; code should have good reason (and no alternative) before doing so.
@@ -51,7 +51,7 @@ It's expensive to iterate over every task in a system with many processes; code 
 7. Process creation:
 The fork syscall creates a child process that is a copy of current process, it differs from the parent only in pid, ppid, and certain resources and statistics, such as pending signals, which are not inherited.
 • Copy-On-Write:
-Using COW, the only overhead incurred by fork() is the duplication of its parent's page tables and the creation of a unique process descriptor of the child.
+Using COW, the only overhead incurred by fork() is the duplication of its parent's page tables(because child and parent share a single address space, so child's page table must be the same with its parent's.) and the creation of a unique process descriptor of the child.
 • The fork, vfork, and __clone all invoke the clone() system call with requisite flags. The clone() syscall, in turn, calls do_fork(). Deliberately, the kernel intends to run child first(although this is not function correctly.) Because in the common case of the child simply calling exec() immediately, this eliminates any COW overhead that would occur if the parent ran first and began writing to the address space.
 • vfork:
 The vfork syscall has the same effect as fork, except that the page table entries of the parent process are not copied. Instead the child executes as the sole thread in the parent's address space, and parent is blocked until the child either calls exec() or exits.
@@ -66,7 +66,7 @@ and vfork() is implemented as: clone(CLONE_VFORK | CLONE_VM | SIGCHLD, 0);
 see more about clone()'s flags.
 
 • Kernel threads:
-Kernel threads are the processes that exist only in kernel space. The significant difference between kernel threads and normal processes is that kernel threads do not have an address space. (kernel threads' mm pointer is NULL (which points to their address space.)). Kernel threads operate only in kernel space and do not context to user-space. But kernel threads are scheduable and preemptable, the same as normal processes (process context). Kernel threads are created on system boot by other kernel threads. in header file <linux/kthread.h>, kthread_create() spawns a new kernel thread from an existing one.
+Kernel threads are the processes that exist only in kernel space. The significant difference between kernel threads and normal processes is that kernel threads do not have a process address space. (kernel threads' mm pointer is NULL (which points to their address space.)). Kernel threads operate only in kernel space and do not context to user-space. But kernel threads are scheduable and preemptable, the same as normal processes (process context). Kernel threads are created on system boot by other kernel threads. in header file <linux/kthread.h>, kthread_create() spawns a new kernel thread from an existing one.
 
 9. Process termination:
 After do_exit() is called, the only memory it occupies is its kernel stack, the thread_info struct, and the task_struct structure. The task exists solely to provide information to its parent.
