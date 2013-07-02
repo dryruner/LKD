@@ -98,7 +98,7 @@ In short, kernel preemption can occur:
 i)   When an interrupt handler exits, before returning to kernel-space;
 ii)  When kernel code becomes preemptible again; (preempt_count -> 0)
 iii) If a task in the kernel explicitly calls schedule();
-iv)  If a task in the kernel blocks ().
+iv)  If a task in the kernel blocks (which results in a call to schedule()).
 
 9. Real-time scheduling policies:
 Linux provides 2 real-time scheduling policies: SCHED_FIFO, and SCHED_RR. (Normal, not real-time scheduling policy is SCHED_NORMAL.) These 2 real-time scheduling policies are not managed by CFS, but by a special real-time scheduler, defined in kernel/sched_rt.c.

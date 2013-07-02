@@ -7,7 +7,7 @@ SYSCALL_DEFINE0(getpid)
 SYSCALL_DEFINE0 is simply a macro that defines a system call with no parameters. The expanded code looks like this:
 asmlinkage long sys_getpid(void);
 i)   asmlinkage is a directive to tell the compiler to look only on the stack for this function's argument. This is a required modifier for all system calls.
-ii)  System calls defined to return an int in user-space return a long in the kernel.
+ii)  System calls defined to return an int in user-space return a long in the kernel. (For compability)
 iii) Naming convention: syscall bar() is implemented in the kernel as function sys_bar().
 
 • System call numbers:
