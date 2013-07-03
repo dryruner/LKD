@@ -91,7 +91,7 @@ But to force the removal of all UIDs, you can call void idr_remove_all(struct id
 The root of rbtree is represented by the rb_root structure: 
 struct rb_root root = RB_ROOT;
 
-• The rbtree implementation doesn't provide search and insert routines. Users of rbtrees should define their own, see the lib/rbtree.c for more details. Note that the user-provide search version should call rb_link_node() and rb_insert_color(), check the comments in the source code.
+• The rbtree implementation doesn't provide search and insert routines. Users of rbtrees should define their own, see the lib/rbtree.c for more details. Note that the user-provide insertion version should call rb_link_node() and rb_insert_color(), check the comments in the source code.
 
 5. What data structure to use and when:
 Besides the 4 types of data structures mentioned above, kernel also provides radix tree and bitmaps. But kernel doesn't provide hash table implementation, because hash function is specific to each use case. 
