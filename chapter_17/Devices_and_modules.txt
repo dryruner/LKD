@@ -9,7 +9,7 @@ iv)  Sysfs: A filesystem representation of the system's device tree.
 Abbreviated as blkdevs, block devices are addressable in device-specified chunks called blocks and generally support seeking, the random access of data. Block devices are accessed via a special file called a block device node and generally mounted as a filesystem.
 • Character devices:
 Abbreviated as cdevs, character devices are generally not addressable, providing access to data only as a stream, generally of characters(bytes). Example cdevs include keyboards, mice, printers, and most pseudo-devices. cdevs are accessed via a special file called a character device node. Unlike with block devices, applications interact with cdevs directly through their device node.
-• Netwoek devices:
+• Network devices:
 Network devices provide access to a network via a physical adapter and a specific protocol. Breaking Unix's "everything is a file" design principle, network devices are not accessed via a device node but with a special interface called the socket API.
 
 Not all device drivers represent physical devices. Some device drivers are virtual, providing access to kernel functionality. We call these pseudo devices. For example, the kernel random number generator (accessed at /dev/random), the null device (accessible at /dev/null), the zero device (accessible at /dev/zero), the full device (/dev/full), the memory device (/dev/mem).
