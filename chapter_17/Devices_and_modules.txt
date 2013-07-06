@@ -197,7 +197,7 @@ At the heart of the device model is the kobject, which is defined in <linux/kobj
 struct kobject{
 	const char* name;        /* name of this kobject */
 	struct list_head entry;  /* */
-	struct kobject* parent;  /* points to this kobject's parent, this forms sysfs - a user-space filesystem representation of the kobject object hierarchy inside the kernel */
+	struct kobject* parent;  /* points to this kobject's parent,this forms sysfs - a user-space filesystem representation of the kobject object hierarchy inside the kernel */
 	struct kset* kset;
 	struct kobj_type* ktype; 
 	struct sysfs_dirent* sd; /* points to sysfs_dirent, which represents this kobject in sysfs */
@@ -238,7 +238,7 @@ struct kset{
 
 • Managing and manipulating kobjects:
 The first step in using a kobject is declaring and initializing it. 
-void kobject_init(struct kobject* kobj, struct kobj_type* ktype;
+void kobject_init(struct kobject* kobj, struct kobj_type* ktype);
 The 1st parameter is the kobject to be initialized. Before calling this function, the kobject must be zeroed, if not, a simple call to memset() does the trick:
 =================================================
 struct kobject* kobj;
