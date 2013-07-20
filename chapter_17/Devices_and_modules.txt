@@ -51,6 +51,20 @@ void my_exit(void);
 As with the init function, you probably want to mark it static. If the file were compiled into the static kernel image, the exit function would NOT be included, and it would never be invoked because if it were not a module, the code could never be removed from memory.
 • The MODULE_LICENSE() macro specifies the copyright license for this file. Loading a non-GPL module into memory results in the tainted flag being set in the kernel. Second, non-GPL modules cannot invoke GPL-only symbols.
 
+• Note that module_init() and module_exit() are two macros defined in <linux/init.h>:
+=====================================================================
+#define module_init(initfn)					\
+		static inline initcall_t __inittest(void)		\  // line 1.1
+	{ return initfn; }					\                  // line 1.2
+	int init_module(void) __attribute__((alias(#initfn))); // line 2
+
+#define module_exit(exitfn)					\
+		static inline exitcall_t __exittest(void)		\
+	{ return exitfn; }					\
+	void cleanup_module(void) __attribute__((alias(#exitfn)));
+=====================================================================
+Note that line 1.1~1.2 is to check the function prototype. If you've ready defined init_module() function and cleanup_module() function (They must have this exact function name!), then there's no need to use module_init() and module_exit(). 
+
 • Building modules:
 (I)  Living in the source tree:
 Ideally your module is an official part of Linux and thus lives in the kernel source tree.
