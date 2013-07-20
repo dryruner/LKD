@@ -53,7 +53,7 @@ iii) The process must not be able to bypass memory access restrictions. (If read
 Kernel provides 2 methods for performing requisite check and the desired copy to and from user-space.
 i)  For writing to user-space, the method copy_to_user() is provided;
 ii) For reading from user-space, the method copy_from_user() is provided.
-Both copy_to_user() and copy_from_user() may block. This could occur, for example, if the page containing the user data is not in physical, then it must wait until page fault handler brings the page back into memory.
+Both copy_to_user() and copy_from_user() may block. This could occur, for example, if the page containing the user data is not in physical, then it must wait until page fault handler brings the page back into memory. (Defined/Declared in <asm/uaccess.h>, along with get_user(), put_user(), etc.)
 
 A final possible check is for valid permission. A call to capable() with a valid capabilities flag returns nonzero if the caller holds the specified capability, and zero otherwise.
 
