@@ -245,8 +245,8 @@ kernel_locked();         Returns nonzero if the lock is held, and 0 otherwise. (
 • The BKL also disables kernel preemption while it is held. On UP kernels, the BKL code doesn't actually perform any physical locking.
 • One of the major issues concerning the BKL is determining what the lock is protecting. Too often the BKL is seemingly associated with code instead of data. This makes replacing BKL uses with a spin lock difficult because it is not easy to determine just what is being locked.
 
-7. Sequential locks:
-The sequential lock is a new type of lock introduced in the 2.6 kernel. It provides a simple mechanism for reading and writing shared data. It works by maintaining a sequence counter. Whenever the data in question is writing to, a lock is obtained and a sequence number is incremented. Prior to and after reading the data, the sequence number is read; if the values are the same, a write didn't begin in the middle of read. Further, if the values are even, a write is not underway. (Grabbing the write lock makes the value odd, whereas releasing it makes it even because the lock starts at 0.)
+7. Sequential locks: (http://en.wikipedia.org/wiki/Seqlock)
+The sequential lock is a new type of lock introduced in the 2.6 kernel. It provides a simple mechanism for reading and writing shared data. It works by maintaining a sequence counter. Whenever the data in question is writing to, a lock is obtained and a sequence number is incremented. (Writer increments the sequence number, both after acquiring the lock and before releasing the lock. http://en.wikipedia.org/wiki/Seqlock) Prior to and after reading the data, the sequence number is read; if the values are the same, a write didn't begin in the middle of read. Further, if the values are even, a write is not underway. (Grabbing the write lock makes the value odd, whereas releasing it makes it even because the lock starts at 0.)
 =================================================================================
 To define a seq lock:
 seqlock_t mr_seq_lock = DEFINE_SEQLOCK(mr_seq_lock);
@@ -288,6 +288,11 @@ write_seqlock(&xtime_lock);
 jiffies_64 += 1;
 write_sequnlock(&xtime_lock);
 ===============================
+
+* seqlock is more efficient than traditional read-write locks for the situation where there are many readers and few writers. The drawback is that if there is too much write activity or the reader is too slow, they might livelock. (The readers may starve.)
+* Also note that seqlock will not work for data that contains pointers, because any writer may invalidate a pointer that a reader has already followed. In this case, using read-copy-update synchronization is preferred.
+* One subtle issue of using seqlocks for a time counter is that it's impossible to step through it with a debugger. The read retry is triggered all the time because the debugger is slow enough.
+
 
 8. Preemption disabling:
 • Because the kernel is preemptive, a task can begin running in the same critical section as a task that was preempted. To prevent this, the kernel preemption uses spin locks as markers of nonpreemptive regions. If a spin lock is held, the kernel is not preemptive. (Because the concurrency issues with kernel preemption and SMP are the same, and the kernel is SMP-safe using spin locks, so this simple change also makes the kernel preempt-safe.)
