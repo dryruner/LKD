@@ -252,7 +252,7 @@ To define a seq lock:
 seqlock_t mr_seq_lock = DEFINE_SEQLOCK(mr_seq_lock);
 
 The write path is then:
-write_seqlcok(&mr_seq_lock);
+write_seqlock(&mr_seq_lock);
 /* write lock is obtained... */
 write_sequnlock(&mr_seq_lock);
 
@@ -265,7 +265,7 @@ do{
 }while(read_seqretry(&mr_seq_lock, seq));
 =================================================================================
 Seq locks are useful to provide a lightweight and scalable lock for use with many readers and a few writers. Seq locks, however, favor writers over readers. Seq locks are ideal when your locking needs meet most or all of the following requirements:
-• Your data has a lot of readers. Youra data has few writers
+• Your data has a lot of readers. Your data has few writers
 • Although few in number, you want to favor writers over readers and never allow readers to starve writers.
 • Your data is simple, such as a simple structure or even a single integer that, for whatever reason, cannot be made atomic.
 
