@@ -160,7 +160,7 @@ for(;;)
 {
 	if(!softirq_pending(cpu))
 		schedule();
-	set_current)_state(TASK_RUNNING);
+	set_current_state(TASK_RUNNING);
 	while(softirq_pending(cpu))
 	{
 		do_softirq();

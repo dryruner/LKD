@@ -169,7 +169,7 @@ init_MUTEX(sem);
 
 • Using semaphores:
 down_interruptible() (like P() operation) attempts to acquire the given semaphore, if it is unavailable, it places the calling process to sleep in the TASK_INTERRUPTIBLE state. (it could be waken up by a signal.) If the task receives a signal while waiting for the semaphore, it is awakened and down_interruptible() returns -EINTR. 
-Alternatively, the function down() places the task in the TASK_UNINTERRUPTIBLE state when it sleeps. You can use down_trylock() to try to acquire the given semaphores without blocking. If the semaphore is already held, the fucntion immediately returns nonzero. Otherwise, it returns 0 and you successfully hold the lock.
+Alternatively, the function down() places the task in the TASK_UNINTERRUPTIBLE state when it sleeps. You can use down_trylock() to try to acquire the given semaphores without blocking. If the semaphore is already held, the function immediately returns nonzero. Otherwise, it returns 0 and you successfully hold the lock.
 
 sema_init(struct semaphore*, int);           Initializes the dynamically created semaphore to the given count.
 init_MUTEX(struct semaphore*);               Initializes the dynamically created semaphore with the count of 1.

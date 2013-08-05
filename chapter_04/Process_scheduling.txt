@@ -60,13 +60,13 @@ Wait queues in the kernel are represented in the kernel by wake_queue_head_t. Wa
 The task performs the following steps to add itself to a wait queue:
 i)   Create a wait queue entry via macro DEFINE_WAIT()
 ii)  Add itself to a wait queue via add_wait_queue(). 
-iii) Calls prepare_to_wait() the change the process's state to either TASK_INTERRUPTIBLE or TASK_UNINTERRUPTIBLE.
+iii) Call prepare_to_wait() to change the process's state to either TASK_INTERRUPTIBLE or TASK_UNINTERRUPTIBLE.
 iv)  If the state is set to TASK_INTERRUPTIBLE, and a signal wakes it up (a spurious wake up), needs to check and handle signals.
 v)   When the tasks wakes up, should check again whether the condition is met or not, to avoid TOCTTOU bug. So we should use while() to check conditions.
 vi)  Now that the condition is true, the task set itself to TASK_RUNNING and removes itself from the wait queue via finish_wait().
 
 • Waking up:
-Waking is handled via wait_up(), which wakes up all the tasks waiting on the given wait queue. It calls try_to_wake_up() to set the task's state to TASK_RUNNING; calls enqueue_task() to add the task to the red-black tree; and sets need_resched if the awakened task's priority is higher than the priority of current task.
+Waking is handled via wake_up(), which wakes up all the tasks waiting on the given wait queue. It calls try_to_wake_up() to set the task's state to TASK_RUNNING; calls enqueue_task() to add the task to the red-black tree; and sets need_resched if the awakened task's priority is higher than the priority of current task.
 
 8. Preemption and context switching:
 context_switch() is in the kernel/sched.c, it is called by schedule() when a new process has been selected to run. It does 2 things:
