@@ -242,7 +242,7 @@ This call puts your task to sleep until at least the specified time has elapsed.
 	/* take a nap and wake up in 's' seconds */
 	schedule_timeout(s * HZ);
 The lone parameter is the desired relative timeout, in jiffies. The task must be in state TASK_INTERRUPTIBLE or TASK_UNINTERRUPTIBLE before schedule_timeout() is called or else the task will not go to sleep. 
-Because schedule_timeout() invokes the scheduler, so it cannot be used in interrupt context. In case the task was awakened prematurely, the timer is destroyed, the function then returns the time slept.
+Because schedule_timeout() invokes the scheduler, so it cannot be used in interrupt context. In case the task was awakened prematurely, the timer is destroyed, the function then returns the time left (before timeout).
 The MAX_SCHEDULE_TIMEOUT check enables a task to sleep indefinitely.
 
 • Sleeping on a wait queue, with a timeout
