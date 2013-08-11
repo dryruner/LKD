@@ -15,12 +15,12 @@ Linux is a monolithic kernel, but it supports modular design, the capability of 
 
 4. Kernel version:
 
--- major version
+ -- major version
 |
-|    - the revision  
+|     - the revision  
 |    | 
 2.6.26.1
   |    |
-  |    -   
+  |     -
   |
-  - minor version(an even number is stable, while odd number is a development version)
+   - minor version(an even number is stable, while odd number is a development version)
