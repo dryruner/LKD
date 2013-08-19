@@ -243,7 +243,7 @@ void* __alloc_percpu(size_t size, size_t align);
 void free_percpu(const void*);
 The alloc_percpu() macro allocates one instance of an object of the given type for every processor on the system. The alloc_percpu() macro aligns the allocation on a byte boundary that is the natural alignment of the given type.
 __alignof__(type) is a gcc feature that returns the required alignment in bytes for a given type or lvalue.
-A call to alloc_percpu() or __alloc_percpu() returns a pointer, which is used to indirectly reference the dynamically created per-CPU data. The kernel provides two macros to make this wasy:
+A call to alloc_percpu() or __alloc_percpu() returns a pointer, which is used to indirectly reference the dynamically created per-CPU data. The kernel provides two macros to make this easy:
 get_cpu_var(ptr); /* return a void pointer to this processor's copy of ptr */
 put_cpu_var(ptr); /* done, enable kernel preemption */
 The get_cpu_var() macro returns a pointer to the specific instance of the current processor's data; it also disables kernel preemption, which a call to put_cpu_var() enables. For example:
