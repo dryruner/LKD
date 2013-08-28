@@ -6,7 +6,7 @@ Top halves versus bottom halves: Because the 2 goals: i) ISR executes quickly; i
 
 • Registering an interrupt handler:
 Drivers can register an interrupt handler and enable a given interrupt line for handling with the function request_irq(), which is declared in <linux/interrupt.h>:
-int request_irq(unsigned int irq, irq_handler_t handler, unsigned long flags, const char* name, void* dev);
+	int request_irq(unsigned int irq, irq_handler_t handler, unsigned long flags, const char* name, void* dev);
 i)   1st argu: irq specifies the interrupt number to allocate. It could be hard-coded or dynamically determined.
 ii)  2nd argu: handler is a function pointer to the actual interrupt handler that services this interrupt;
 typedef irqreturn_t (*irq_handler_t)(int, void*);
@@ -27,7 +27,7 @@ Note that request_irq() can sleep, therefore cannot be called from interrupt con
 
 • Freeing an interrupt handler:
 When the driver unloads, need to unregister the interrupt handler and potentially disable the interrupt line. Call:
-void free_irq(unsigned int irq, void* dev);
+	void free_irq(unsigned int irq, void* dev);
 Note that the invocation of free_irq() must be made from process context.
 
 2. Writing an interrupt handler:
