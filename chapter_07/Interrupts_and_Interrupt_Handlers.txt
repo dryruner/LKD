@@ -56,7 +56,7 @@ Interrupt context is time-critical because interrupt handler interrupts other co
 • The setup of an interrupt handler's stack
 i)  Historically, interrupt handlers didn't have their own stacks; instead, they share the (kernel) stack of the interrupted process. (Kernel stack is 2 pages in size. And at least one process is running at any given time, when nothing else is schedulable, the idle task runs.)
 ii) From 2.6 kernel process, an option was added to reduce the stack size from 2 pages to 1 page. This reduced memory usage/pressure because every process previously needed 2 pages of contiguous, nonswappable kernel memory. To cope with this recuded stack size, interrupt handlers were given their own stack, one stack per processor, one page in size. This stack is referred to as "interrupt stack".
-The interrupt handler should not care what stack setuo is in use or what the size of the kernel stack is. Always use an absolute minimum amount of stack space.
+The interrupt handler should not care what stack setup is in use or what the size of the kernel stack is. Always use an absolute minimum amount of stack space.
 
 4. Implementing interrupt handlers:
 The path of an interrupt goes from hardware to the kernel:
