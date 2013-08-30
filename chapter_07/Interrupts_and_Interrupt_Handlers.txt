@@ -6,7 +6,7 @@ Top halves versus bottom halves: Because the 2 goals: i) ISR executes quickly; i
 
 • Registering an interrupt handler:
 Drivers can register an interrupt handler and enable a given interrupt line for handling with the function request_irq(), which is declared in <linux/interrupt.h>:
-int request_irq(unsigned int irq, irq_handler_t handler, unsigned long flags, const char* name, void* dev);
+	int request_irq(unsigned int irq, irq_handler_t handler, unsigned long flags, const char* name, void* dev);
 i)   1st argu: irq specifies the interrupt number to allocate. It could be hard-coded or dynamically determined.
 ii)  2nd argu: handler is a function pointer to the actual interrupt handler that services this interrupt;
 typedef irqreturn_t (*irq_handler_t)(int, void*);
@@ -27,12 +27,12 @@ Note that request_irq() can sleep, therefore cannot be called from interrupt con
 
 • Freeing an interrupt handler:
 When the driver unloads, need to unregister the interrupt handler and potentially disable the interrupt line. Call:
-void free_irq(unsigned int irq, void* dev);
+	void free_irq(unsigned int irq, void* dev);
 Note that the invocation of free_irq() must be made from process context.
 
 2. Writing an interrupt handler:
 • The following is a declaration of an interrupt handler:
-static irqreturn_t intr_handler(int irq, void* dev);
+	static irqreturn_t intr_handler(int irq, void* dev);
 This declaration matches the prototype of the handler argument given to request_irq(). 
 i)   1st argu: irq - the numeric value of the interrupt line the handler is servicing; 
 ii)  2nd argu: dev - pointer to the same dev that was given to request_irq() when the interrupt handler is registered.
@@ -47,7 +47,7 @@ i)   The IRQF_SHARED flag must be set in the flags argument to request_irq(). (A
 ii)  The dev argument must be unique to each registered handler. A pointer to any per-device structure is sufficient; and you cannot pass NULL for a shared handler!
 iii) The interrupt handler must be capable of distinguishing whether its device actually generated an interrupt. This requires both hardware support and associated logic in the interrupt handler. If the hardware did not offer this capability, there would be no way for the interrupt handler to know whether its associated device or some other device sharing the line caused the interrupt. 
 
-Note that shared handlers can mix usage of IRQ_DISABLED. When the kernel kernel receives an interrupt, it invokes sequentially each registered handler on the line.
+Note that shared handlers can mix usage of IRQ_DISABLED. When the kernel receives an interrupt, it invokes sequentially each registered handler on the line.
 
 3. Interrupt context:
 In interrupt context, the current macro is not relevant (although it points to the interrupted process). Without a backing process, interrupt context cannot sleep - how could it reschedule? Therefore, if a function sleeps, you cannot use this function from an interrupt handler.
