@@ -312,7 +312,8 @@ The given kobject's location in sysfs depends on kobject's location in hierarchy
 i)   If the kobject's parent pointer is set, the kobject maps to a subdirectory in sysfs inside its parent. 
 ii)  If the parent pointer is not set, the kobject maps to a subdirectory inside kset->kobj. 
 iii) if neither the parent nor the kset fields are set in the given kobject, the kobject is assumed to have no parent, and thus mapping to a root-level directory in sysfs.
-Regardless, the name of the directory representing the kobject in sysfs is given by fmt, which accepts a printf-style format string.
+* Regardless, the name of the directory representing the kobject in sysfs is given by fmt, which accepts a printf-style format string.
+* Note, no "ADD" uevent will be created with this call, the caller should set up all of the necessary sysfs files for the object and then call kobject_uevent() with the UEVENT_ADD parameter to ensure that userspace is properly notified of this kobject's creation.
 
 The helper function kobject_create_and_add() combines the work of kobject_create() and kobject_add():
 	struct kobject* kobject_create_and_add(const char* name, struct kobjct* parent);
