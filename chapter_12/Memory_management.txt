@@ -94,7 +94,7 @@ Kernel code tends to use the correct type flag, and not specify the myriad of ot
 Flag                  Description
 GFP_ATOMIC            The allocator is high priority and must not sleep. This is the flag to use in interrupt handlers, bottom halves, while holding a spin lock, and other
                       situations where you cannot sleep.
-GFP_NOWAIT            Like GFP_ATOMIC, except that the call will not fallback on emergency memory pools. This increases the liklihood of the memory allocation failing.
+GFP_NOWAIT            Like GFP_ATOMIC, except that the call will not fallback on emergency memory pools. This increases the likelihood of the memory allocation failing.
 GFP_NOIO              This allocation can block, but must not initiate disk I/O. This is the flag to use in block I/O code when you cannot cause more disk I/O, which might 
                       lead to some unpleasant recursion.
 GFP_NOFS              This allocation can block and can initiate disk i/O if it must, but it will not initiate a filesystem operation. This is the flag to use in filesystem
