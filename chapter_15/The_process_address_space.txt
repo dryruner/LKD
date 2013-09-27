@@ -68,7 +68,7 @@ struct vm_area_struct{
 	unsigned long vm_end;                          /* VMA end, exclusive */
 	struct vm_area_struct* vm_next;                /* list of VMAs */
 	pgprot_t vm_page_prot;                         /* access permission */
-	unsigned long vm_flags;                        /* flags */
+	unsigned long vm_flags;                        /* flags, see below */
 	struct rb_node vm_rb;                          /* VMA's node in the tree */
 	union{                                         /* links to address_space->i_mmap of i_mmap_nonlinear */
 		struct{
@@ -81,7 +81,7 @@ struct vm_area_struct{
 	struct list_head anon_vma_node;                /* anon_vma entry? */
 	struct anon_vma* anon_vma;                     /* anonymous VMA object? */
 	struct vm_operations_struct* vm_ops;           /* associated ops */
-	unsigned long vm_pgoff;                        /* offset within file */
+	unsigned long vm_pgoff;                        /* offset within file, in PAGE_SIZE units */
 	struct file* vm_file;                          /* mapped file, if any */
 	void* vm_private_data;                         /* private data */
 };
@@ -111,8 +111,8 @@ VM_NONLINEAR: This area is a nonlinear mapping.
 The vm_ops field in the vm_area_struct structure points to the table of operations associated with a given memory area, like the VFS way. Defined in <linux/mm.h>:
 ============================================================================
 struct vm_operations_struct{
-	void (*open)(struct vm_area_struct*); /* Invoked when the given memory area is added to an address space */
-	void (*close)(struct vm_area_struct*); /* Invoked when the given memory area is removed from an address space */
+	void (*open)(struct vm_area_struct*); /* Invoked when the given memory area is added to an address space, see LDD3's notes. */
+	void (*close)(struct vm_area_struct*); /* Invoked when the given memory area is removed from an address space, see LDD3's notes. */
 	int (*fault)(struct vm_area_struct*, struct vm_fault*); /* Invoked by the page fault handler when a page that is not present in physical memory is accessed */
 	int (*page_mkwrite)(struct vm_area_struct* vma, struct vm_fault* vmf); /* Invoked by the page fault handler when a page that was read-only is being made writable */
 	int (*access)(struct vm_area_struct*, unsigned long, void*, int, int); /* Invoked by access_process_vm() when get_user_pages() fails. */
