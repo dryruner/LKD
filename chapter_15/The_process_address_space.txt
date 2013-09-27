@@ -133,7 +133,7 @@ Note the memory areas without a mapped file on device 00:00 and inode 0. This is
 The kernel often has to perform operations on a memory area, such as whether a given address exists in a given VMA. The functions are all declared in <linux/mm.h>.
 • find_vma():
 struct vm_area_struct* find_vma(struct mm_struct* mm, unsigned long addr);  // defined in mm/mmap.c
-This function searches the given address space for the first memory area whose vm_end > addr. In other words, this function finds the first memory area that contains addr or begins at an address greater than addr. (Returns NULL if no such memory area exists.) Note that because the returned VMA may start at an address greater than the given address addr, so it doesn't mean addr lies inside the returned VMA (if returned-VMA != NULL) 
+This function searches the given address space for the first memory area whose vm_end > addr. In other words, this function finds the first memory area that contains addr or begins at an address greater than addr. (Returns NULL if no such memory area exists.) Note that because the returned VMA may start at an address greater than the given address addr, so it doesn't mean addr lies inside the returned VMA (if returned_VMA != NULL) 
 The result of find_vma() is cached in the mmap_cache field of the memory descriptor. (This cache hit ratio is about 30% ~ 40% in practice.) If the given address is not in the cache, you must search the memory areas associated with this memory descriptor (in the red-black tree).
 ===========================================================================
 struct vm_area_struct* find_vma(struct mm_struct* mm, unsigned long addr)
@@ -170,7 +170,7 @@ struct vm_area_struct* find_vma(struct mm_struct* mm, unsigned long addr)
 	return vma;
 }
 ===========================================================================
-The initial check of mmap_cache tests whether the cached VMA contains the desired address. Note that simply checking whether the VMA's vm_end field is larger than addr would not ensure that yhis is the first such VMA that is larger than addr. Thus for the cache to be useful here, the given addr must lies inside the VMA - and this is just the scenario that consecutive operations on the same VMA would occur.
+The initial check of mmap_cache tests whether the cached VMA contains the desired address. Note that simply checking whether the VMA's vm_end field is larger than addr would not ensure that this is the first such VMA that is larger than addr. Thus for the cache to be useful here, the given addr must lies inside the VMA - and this is just the scenario that consecutive operations on the same VMA would occur.
 If the cache doesn't contain the desired VMA, the function must search the memory areas red-black tree. The functions terminates as soon as a VMA is found that contains the given address. If such a VMA is not found, the function continues traversing the tree and returns the first VMA it found that starts after addr. If no VMA is ever found, NULL is returned.
 
 • find_vma_prev():
@@ -193,9 +193,9 @@ Draw several diagrams so you could understand why it could be implemented in suc
 
 6. mmap() and do_mmap(): creating an address interval (memory area)
 The do_mmap() is used by the kernel to create a new linear address interval to a process's address space. If the created address interval is adjacent to an existing address interval, and if they share the same permissions, the two intervals are merged into one. If this merge is impossible, a new VMA is created.
-Declared in <linux/mm.h>:
-unsigned long do_mmap(struct file* file, unsigned long addr, unsigned long len, unsigned long prot, unsigned long flag, unsigned long offset);
-This function maps the file specified by file at offset for length len. The file parameter can be NULL and the offset can be zero, in which case, the mapping will not be backed by a file (anonymous mapping). If a file and an offset are provided, the mapping is called a file-backed mapping.
+	#include <linux/mm.h>:
+	unsigned long do_mmap(struct file* file, unsigned long addr, unsigned long len, unsigned long prot, unsigned long flag, unsigned long offset);
+This function maps the file specified by @file at @offset for length @len. The file parameter can be NULL and the offset can be zero, in which case, the mapping will not be backed by a file (anonymous mapping). If a file and an offset are provided, the mapping is called a file-backed mapping.
 The addr parameter optionally specifies the initial address from which to start the search for a free interval.
 The prot parameter specifies the access permission for pages in the memory area. Usual flags include: PROT_READ, PROT_WRITE, PROT_EXEC, PROT_NONE. See p318 for more details.
 The flag parameter specifies the type of the mapping, and change the behavior of the mapping. They are defined in <asm/mman.h>
