@@ -19,7 +19,8 @@ struct mm_struct{
 	int map_count;                                  /* number of memory areas */
 	struct rw_semaphore mmap_sem;                   /* rw-semaphore to protect memory descriptor */
 	spinlock_t page_table_lock;                     /* spinlock to protect page table (PGD) */
-	struct list_head mmlist;                        /* all mm_structs are in the doubly linked list */
+	struct list_head mmlist;                        /* all mm_structs are in the doubly linked list, they're globally strung together off init_mm.mmlist, 
+                                                       and are protected by mmlist_lock */
 	unsigned long start_code;                       /* start address of code */
 	unsigned long end_code;
 	unsigned long start_data;
