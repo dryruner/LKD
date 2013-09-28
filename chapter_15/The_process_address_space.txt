@@ -81,7 +81,7 @@ struct vm_area_struct{
 	struct list_head anon_vma_node;                /* anon_vma entry? */
 	struct anon_vma* anon_vma;                     /* anonymous VMA object? */
 	struct vm_operations_struct* vm_ops;           /* associated ops */
-	unsigned long vm_pgoff;                        /* offset within file, in PAGE_SIZE units */
+	unsigned long vm_pgoff;                        /* offset within file, in PAGE_SIZE units; actually this is page frame number (PFN): (pfn << PAGE_SHIFT == pfn * PAGE_SIZE) */
 	struct file* vm_file;                          /* mapped file, if any */
 	void* vm_private_data;                         /* private data */
 };
