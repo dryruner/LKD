@@ -8,7 +8,7 @@ Memory areas do not overlap, a valid address in the process address space exists
 3. The memory descriptor:
 The kernel represents a process address space using a data structure called memory descriptor, of the type struct mm_struct, which is defined in <linux/mm_types.h>:
 ============================================================
-struct mm_struct{
+struct mm_struct {
 	struct vm_area_struct* mmap;                    /* list of memory areas */
 	struct rb_root mm_rb;                           /* root node of the red-black tree of VMAs */
 	struct vm_area_struct* mmap_cache;              /* last used memory area */
@@ -81,7 +81,7 @@ struct vm_area_struct{
 	struct list_head anon_vma_node;                /* anon_vma entry? */
 	struct anon_vma* anon_vma;                     /* anonymous VMA object? */
 	struct vm_operations_struct* vm_ops;           /* associated ops */
-	unsigned long vm_pgoff;                        /* offset within file, in PAGE_SIZE units */
+	unsigned long vm_pgoff;                        /* offset within vm_file, in PAGE_SIZE units */
 	struct file* vm_file;                          /* mapped file, if any */
 	void* vm_private_data;                         /* private data */
 };
