@@ -111,8 +111,8 @@ VM_NONLINEAR: This area is a nonlinear mapping.
 The vm_ops field in the vm_area_struct structure points to the table of operations associated with a given memory area, like the VFS way. Defined in <linux/mm.h>:
 ============================================================================
 struct vm_operations_struct{
-	void (*open)(struct vm_area_struct*); /* Invoked when the given memory area is added to an address space, see LDD3's notes. */
-	void (*close)(struct vm_area_struct*); /* Invoked when the given memory area is removed from an address space, see LDD3's notes. */
+	void (*open)(struct vm_area_struct*); /* Invoked whenever a new reference is made to the given memory area, like when a process forks. The one exception happens when the VMA is first created by mmap, in this case the driver's mmap method is called. */
+	void (*close)(struct vm_area_struct*); /* Invoked when the given memory area is removed from an address space. Note that there is no usage count associated with VMAs; the area is opened and closed exactly once by each process that uses it. */
 	int (*fault)(struct vm_area_struct*, struct vm_fault*); /* Invoked by the page fault handler when a page that is not present in physical memory is accessed */
 	int (*page_mkwrite)(struct vm_area_struct* vma, struct vm_fault* vmf); /* Invoked by the page fault handler when a page that was read-only is being made writable */
 	int (*access)(struct vm_area_struct*, unsigned long, void*, int, int); /* Invoked by access_process_vm() when get_user_pages() fails. */
