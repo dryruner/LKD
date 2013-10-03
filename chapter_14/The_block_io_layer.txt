@@ -8,7 +8,7 @@ The block size cannot be smaller than sector size and must be a multiple of sect
 2. Buffers and buffer heads:
 When a block is stored in memory - say, after a read or pending write - it is stored in a buffer. Each buffer is associated with exactly 1 block. The buffer serves as the object that represents a disk block in memory. A single page can hold one or more blocks in memory. Each buffer is associated with a descriptor, which is called buffer head and is defined in <linux/buffer_head.h>, of type struct buffer_head:
 ===========================================================================
-struct buffeR_head{
+struct buffer_head{
 	unsigned long b_state;              /* buffer state flags */
 	struct buffer_head* b_this_page;    /* list of page's buffers */
 	struct page* b_page;                /* associated page */
@@ -16,7 +16,7 @@ struct buffeR_head{
 	size_t b_size;                      /* size of mapping */
 	char* b_data;                       /* pointer to data within page */
 	struct block_device* b_bdev;        /* associated block device */
-	bn_end_io_t* b_end_io;              /* I/O completion */
+	bh_end_io_t* b_end_io;              /* I/O completion */
 	void* b_private;                    /* reserved for b_end io */
 	struct list_head b_assoc_buffers;   /* associated mappings */
 	struct address_space* b_assoc_map;  /* associated address space */
@@ -26,7 +26,7 @@ struct buffeR_head{
 b_state flag specifies the state of this particular buffer, see p292 for more details. Note that bh_state_bits enumeration's last value: BH_PrivateStart flag; it isn't a valid state of buffer, but indicates the first usable bit of which other code can make use. (All bit values equal to or greater than BH_PrivateStart are safe to be used by individual drivers who want to store information in the b_state field.)
 Before manipulating a buffer head, you must increment its reference count via get_bh(); and call put_bh() when finished with the buffer head.
 The physical block on disk to which a given buffer corresponds is the b_blocknr-th logical block on the block device described by b_bdev.
-The physical page in memory to which a given buffers corresponds is the page pointed to by b_page. b_data is a pointer directly to the block that exists somewhere in b_page, which is b_data in size. Therefore, the block is located in memory starting at address b_data and ending at address (b_data + b_size).
+The physical page in memory to which a given buffers corresponds is the page pointed to by b_page. b_data is a pointer directly to the block that exists somewhere in b_page, which is b_size in size. Therefore, the block is located in memory starting at address b_data and ending at address (b_data + b_size).
 
 The purpose of a buffer head is to describe this mapping between the on-disk block and the physical in-memory buffer (which is a sequence of bytes on a specific page). Acting as a descriptor of this disk_block-to-physical_page mapping is buffer_head's only role in kernel.
 
@@ -37,15 +37,15 @@ i) The buffer head was a large and unwieldy data structure, and kernel prefers t
 Defined in <linux/bio.h>, bio represents block I/O operations that are in flight(active) as a list of segments. A segment is a chunk of a buffer that is contiguous in memory; thus, individual buffers need not be contiguous in memory. The bio structure provides the capability for the kernel to perform block I/O operations of even a single buffer from multiple locations in memory. (This is called scatter-gather I/O.)
 ==========================================================================
 struct bio{
-	sector_t bi_sector;               /* associated sector on disk */
-	struct bio* bi_next;              /* list of requests */
+	sector_t bi_sector;               /* device address in 512-byte sectors */
+	struct bio* bi_next;              /* request queue link */
 	struct block_device* b_bdev;      /* associated block device */
 	unsigned long bi_flags;           /* status and command flags */
 	unsigned long bi_rw;              /* read or write? */
 	unsigned short bi_vcnt;           /* number of bio_vecs */
 	unsigned short bi_idx;            /* current index in bi_io_vec */
 	unsigned short bi_phys_segments;  /* number of segments */
-	unsigned int bi_size;             /* I/O count */
+	unsigned int bi_size;             /* size of data to be transferred, in bytes */
 	unsigned int bi_seg_front_size;   /* size of first segment */
 	unsigned int bi_seg_back_size;    /* size of last segment */
 	unsigned int bi_max_vecs;         /* maximum bio vecs possible */
@@ -64,7 +64,7 @@ struct bio{
      ^         ^         ^         ^
      |         |         |         |
  ---------------------------------------
-| bio_vec | bio_vec | bio_vec | bio_vec | ... (list of bio_vec structures, bio_vcnt in all.)
+| bio_vec | bio_vec | bio_vec | bio_vec | ... (list of bio_vec structures, @bio_vcnt in all.)
  ---------------------------------------
 ^               ^
 |              /  bi_idx
