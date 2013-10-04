@@ -37,7 +37,7 @@ i) The buffer head was a large and unwieldy data structure, and kernel prefers t
 Defined in <linux/bio.h>, bio represents block I/O operations that are in flight(active) as a list of segments. A segment is a chunk of a buffer that is contiguous in memory; thus, individual buffers need not be contiguous in memory. The bio structure provides the capability for the kernel to perform block I/O operations of even a single buffer from multiple locations in memory. (This is called scatter-gather I/O.)
 ==========================================================================
 struct bio{
-	sector_t bi_sector;               /* device address in 512-byte sectors */
+	sector_t bi_sector;               /* device address in 512-byte sectors, the first 512-byte sector to be transferred for this bio. */
 	struct bio* bi_next;              /* request queue link */
 	struct block_device* b_bdev;      /* associated block device */
 	unsigned long bi_flags;           /* status and command flags */
