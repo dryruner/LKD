@@ -111,7 +111,7 @@ It was the default I/O scheduler in 2.4 kernel. In summary, when a request is ad
 • If a request to an adjacent on-disk sector is in the queue, the existing request and the new request merge into a single request.
 • If a request in the queue is sufficiently old, the new request is inserted at the tail of the queue to prevent starvation of the other, older, requests.
 • If a suitable location sector-wise is in the queue, the new request is inserted there. This keeps the queue sorted by physical location on disk.
-• Finally, if no such suitable insertation point exists, the request is inserted at the tail of the queue.
+• Finally, if no such suitable insertion point exists, the request is inserted at the tail of the queue.
 The linus elevator is implemented in block/elevator.c.
 
 ii)  The deadline I/O scheduler:
@@ -136,12 +136,12 @@ The 3 queues of the deadline I/O scheduler.
 
 iii) The Anticipatory I/O scheduler:
 Although the deadline I/O scheduler does a great job in minimizing read latency, it does so at the expense of global throughput. The anticipatory I/O scheduler aims to continue to provide excellent read latency, but also provide excellent global throughput. The major change is the addition of an anticipation heuristic.
-When a read request is issued, it is handled as usual, within its expiration time. After the request is submitted, however, the anticipatory I/O scheduler doesn't immediately seek back and return to handling other requests. Instead, it does absolutely nothing for a few milliseconds (the default value is six milliseconds.) In those milliseconds, there is a good chance that the application will submit another read request. After the waiting period elapses, the anticipatory I/O scheduler seeks back to where it left off and continues handling the previous requests.
+When a read request is issued, it is handled as usual, within its expiration time. After the request is submitted, however, the anticipatory I/O scheduler doesn't immediately seek back and return to handling other requests. Instead, it does absolutely nothing for a few milliseconds (the default value is 6 milliseconds.) In those milliseconds, there is a good chance that the application will submit another read request. After the waiting period elapses, the anticipatory I/O scheduler seeks back to where it left off and continues handling the previous requests.
 As more and more reads are issued to the same area of disk, many more seeks are prevented. And of course if no activity occurs within the waiting period, the anticipatory I/O scheduler loses and a few milliseconds are wasted. The anticipatory I/O scheduler keeps track of per-process statistics pertaining to block I/O habits in hopes of correctly anticipating the actions of applications. 
 The source code is in block/as-iosched.c. It is ideal for servers, although it performs poorly on certain uncommon but critical workloads involving seek-happy databases.
 
 iv)  The complete fair queueing I/O scheduler:
-The CFQ I/O scheduler assigns incoming I/O requests to specific queues based on the procerss originating the I/O request. Within each queue, requests are coalesced with adjacent requests and insertion sorted. The difference with CFQ I/O scheduler is that there's one queue for each process submitting I/O. CFQ then services the queue round robin, plucking a configurable number of requests from each queue before continuing on to the next.
+The CFQ I/O scheduler assigns incoming I/O requests to specific queues based on the process originating the I/O request. Within each queue, requests are coalesced with adjacent requests and insertion sorted. The difference with CFQ I/O scheduler is that there's one queue for each process submitting I/O. CFQ then services the queue round robin, plucking a configurable number of requests from each queue before continuing on to the next.
 This provides fairness at a per-process level, assuring that each process receives a fair slice of the disk's bandwidth. The intended workload is multimedia, but in practice the CFQ I/O scheduler performs well in many scenarios.
 The source code lives in block/cfq-iosched.c. It is recommended for desktop workloads, although it performs reasonably well in nearly all workloads without any pathological corner cases. It is now the default I/O scheduler in linux.
 
