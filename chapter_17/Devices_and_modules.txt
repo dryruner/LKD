@@ -312,7 +312,8 @@ The given kobject's location in sysfs depends on kobject's location in hierarchy
 i)   If the kobject's parent pointer is set, the kobject maps to a subdirectory in sysfs inside its parent. 
 ii)  If the parent pointer is not set, the kobject maps to a subdirectory inside kset->kobj. 
 iii) if neither the parent nor the kset fields are set in the given kobject, the kobject is assumed to have no parent, and thus mapping to a root-level directory in sysfs.
-Regardless, the name of the directory representing the kobject in sysfs is given by fmt, which accepts a printf-style format string.
+* Regardless, the name of the directory representing the kobject in sysfs is given by fmt, which accepts a printf-style format string.
+* Note, no "ADD" uevent will be created with this call, the caller should set up all of the necessary sysfs files for the object and then call kobject_uevent() with the UEVENT_ADD parameter to ensure that userspace is properly notified of this kobject's creation.
 
 The helper function kobject_create_and_add() combines the work of kobject_create() and kobject_add():
 	struct kobject* kobject_create_and_add(const char* name, struct kobjct* parent);
@@ -341,11 +342,11 @@ struct sysfs_ops{
 };
 =============================================================
 The show() method is invoked when the sysfs entry is read from user-space. It must copy the value of the attribute given by attr into the buffer provided by buffer. The buffer is PAGE_SIZE bytes in length. It returns the size in bytes of data actually written to buffer on success, otherwise, a negative error code on failure.
-The store() method is invoked on write. It must read the size bytes from buffer into the variable represented by the attribute attr. The size of buffer is always PAGE_SIZE or smaller. It returns the size in bytes of data read from buffer on success.
+The store() method is invoked on write. It must read @size bytes from @buffer into the variable represented by the attribute attr. The size of buffer is always PAGE_SIZE or smaller. It returns the size in bytes of data read from buffer on success.
 
 • Creating new attributes:
 	int sysfs_create_file(struct kobject* kobj, const struct attribute* attr);
-Before it's invoked, the given attribute should ve filled out. It returns zero on success. Note that the sysfs_ops specified in the kobject's ktype is invoked to handle this new attribute.
+Before it's invoked, the given attribute should be filled out. It returns zero on success. Note that the sysfs_ops specified in the kobject's ktype is invoked to handle this new attribute.
 It is also possible to create symbolic links:
 	int sysfs_create_link(struct kobject* kobj, struct kobject* target, char* name);
 This function creates a link named name in the directory mapped from kobj to the directory mapped from target.
