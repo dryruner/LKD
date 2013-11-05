@@ -40,7 +40,7 @@ Task forks                    -----------------
 • TASK_INTERRUPTIBLE: the process is sleeping, waiting for some condition to exist. When this condition exists, the kernel sets the process's state to TASK_RUNNING. The process also awakes prematurely and becomes runnable if receives a signal.
 • TASK_UNINTERRUPTIBLE: this state is identical to TASK_INTERRUPTIBLE except that it doesn't wake up and become runnable if it receives a signal.
 • __TASK_TRACED: the process is being traced by another process, such as a debugger, via ptrace.
-• __TASK_STOPPED: process execution has stopped; the task is neither running nor is it eligible to run. This happens if the task receives the SIGSTOP, SIGTSTP, SIGTTIN, SIGTTOU signal, or if it receives any signal while it is being debugged.
+• __TASK_STOPPED: process execution has stopped; the task is neither running nor is it eligible to run. This happens if the task receives the SIGSTOP, SIGTSTP, SIGTTIN, SIGTTOU signal, or if it receives any signal while it is being debugged (This "or" sentence may not be correct, see ULK chapter 03 for more details.).
 
 5. Process context:
 System calls and exception handlers are well-defined interfaces into the kernel. A process can begin executing in kernel space only through one of these interfaces, all access to the kernel is through these interfaces. And the "current" macro is valid only when the kernel is in the process context.
