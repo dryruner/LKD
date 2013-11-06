@@ -262,7 +262,7 @@ At the highest level, there're worker threads. There can be multiple types of wo
 
 • Using work queues:
 i)   Creating work:
-The 1st step is to create some work to defer. To create the structure statically at runtime: DECLARE_WORK(name, void (*func)(void*), void* data); this statically creates a work_struct structure named name with handler function func and argument data. If already have the work_struct structure, using: INIT_WORK(struct work_struct* work, void (*func)(void*), void* data);
+The 1st step is to create some work to defer. To create the structure statically at runtime: DECLARE_WORK(name, void (*func)(struct work_struct *)); this statically creates a work_struct structure named name with handler function func. If already have the work_struct structure, using: INIT_WORK(struct work_struct* work, void (*func)(struct work_struct *));
 
 ii)  The work queue handler:
 The prototype for the work queue handler is:
