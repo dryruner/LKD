@@ -76,14 +76,14 @@ pending is a 32-bit mask of pending softirqs, after it is got from local_softirq
 • Using softirqs:
 Softirqs are reserved for the most timing-critical and important bottom half processing. Currently only two subsystems - network and block devices directly use softirqs. Additionally, kernel timers and tasklets are built on top of softirqs.
 i)   Assigning an index:
-Softirq is declared statically at compile time via an enum in <linux/interrupt.h>. The kernel uses this index which starts from 0, as relative priority. Softirqs with lower index execute before those with higher priorities.
+Softirq is declared statically at compile time via an enum in <linux/interrupt.h>. The kernel uses this index which starts from 0, as relative priority. Softirqs with lower index execute before those with higher indexes.
 Creating a softirq includes adding an entry in the enum, but not simply adding at the end of the enum, because here's a relative priority. But by convention, HI_SOFTTRQ is always the first entry and RCU_SOFTIRQ is always the last entry. A new entry likely belongs in between BLOCK_SOFTIRQ and TASKLET_SOFTIRQ.
 ii)  Registering the handler:
 Softirq handler is registered at run-time via open_softirq(), which takes 2 parameters: the softirq's index and its handler function. For example:
 open_softirq(NET_TX_SOFTIRQ, net_tx_action);
-The softirq handlers run with interrupts enabled and cannot sleep. While a softirq handler runs, softirqs on the current processor are disabled, another processor, however, can execute other softirqs. Because two softirq handlers of the same type could be executed at the same time, so proper locking is required for global data used in softirq handler. If softirq uses a lock to prevent another instance of itself from running simultaneously, there would be no reason to use softirq. Consequently, softirqs handlers resort to per-processor data and other tricks to avoid explicit locking.
+The softirq handlers run with interrupts enabled and cannot sleep. While a softirq handler runs, softirqs on the current processor are disabled (so softirq couldn't preempt itself!), another processor, however, can execute other softirqs. Because two softirq handlers of the same type could be executed at the same time, so proper locking is required for global data used in softirq handler. If softirq uses a lock to prevent another instance of itself from running simultaneously, there would be no reason to use softirq. Consequently, softirqs handlers resort to per-processor data and other tricks to avoid explicit locking.
 iii) Raising the softirqs:
-Calling raise_softirq_irq(softirq_index) to mark it pending, so it could run at the next invocation of do_softirq(). This function disables interrupts prior to actually raising the softirq and then restores them to their previous state. If the interrupts are already off, the function raise_softirq_irqoff(softirq_index) could be used as a small optimization.
+Calling raise_softirq(softirq_index) to mark it pending, so it could run at the next invocation of do_softirq(). This function disables interrupts prior to actually raising the softirq and then restores them to their previous state. If the interrupts are already off, the function raise_softirq_irqoff(softirq_index) could be used as a small optimization.
 Softirqs are most often raised from within interrupt handlers. So ISR performs the basic hardware-related work; raises the softirq; and then exits.
 
 3. Tasklets:
