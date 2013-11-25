@@ -107,11 +107,11 @@ Tasklets are scheduled by tasklet_schedule() and tasklet_hi_schedule(), which re
 i)   Check whether the tasklet's state is TASKLET_STATE_SCHED, if it is, then the tasklet is already scheduled to run and the function immediately returns.
 ii)  Call __tasklet_schedule().
 iii) Save the state of the interrupt system and then disable local interrupts. This ensures that nothing on this processor will mess with the tasklet code while tasklet_schedule() is manipulating the tasklets.
-iv)  Add the tasklet to be scheduled to the head of the tasklet_vec (tasklet_hi_vec) linked list, which is unique to each processor.
+iv)  Add the tasklet to be scheduled to the tail of the tasklet_vec (tasklet_hi_vec) linked list, which is unique to each processor. (So tasklet functions are executed in the order they are inserted into the list. (from head to tail), also see: http://lwn.net/Articles/269072/)
 v)   Raise the TASKLET_SOFTIRQ or HI_SORTIRQ so do_softirq() executes this tasklet in the near future.
 vi)  Restore interrupts to their previous state and return.
 
-do_softirq() executes the associated handlers: tasklet_action() and tasklet_hi_action(), these handlers are the heart of tasklet processing. What these handlers do:
+do_softirq() executes the associated handlers: tasklet_action() and tasklet_hi_action(), these handlers are the heart of tasklet processing. (open_softirq(TASKLET_SOFTIRQ, tasklet_action); open_softirq(HI_SOFTIRQ, tasklet_hi_action); ) What these handlers do:
 i)    Disable local interrupt delivery (there's no need to save the state because the code here is always called as a softirq handler, so interrupts are always enabled.) and receive the tasklet_vec or tasklet_hi_vec list for this processor.
 ii)   Clear this list by setting it to NULL.
 iii)  Enable local interrupt delivery.
